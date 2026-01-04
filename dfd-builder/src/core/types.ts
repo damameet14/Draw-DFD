@@ -41,6 +41,8 @@ export interface DFDEdge {
     sourceNodeId: string;
     targetNodeId: string;
     level: DFDLevel;
+    sourceAngleOffset?: number; // Angle offset in degrees for source handle on process circles
+    targetAngleOffset?: number; // Angle offset in degrees for target handle on process circles
 }
 
 // Diagram Interface

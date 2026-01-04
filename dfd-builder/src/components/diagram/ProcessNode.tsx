@@ -2,6 +2,7 @@ import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
 import { type ProcessNode as ProcessNodeType } from '../../core/types';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './ProcessNode.module.css';
+import { useState, useEffect, useRef } from 'react';
 
 type QuadrantConfig = {
     inCircleSection: { start: number, end: number }; // Angles for IN handles on circle
@@ -28,7 +29,9 @@ const QUADRANT_CONFIGS: Record<string, QuadrantConfig> = {
 };
 
 export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
-    const { diagram, updateNode } = useDiagramStore();
+    const { diagram, updateNode, updateEdge } = useDiagramStore();
+    const [draggingHandleId, setDraggingHandleId] = useState<string | null>(null);
+    const nodeRef = useRef<HTMLDivElement>(null);
 
     // Get custom diameter or use default
     const diameter = data.diameter || 200;
@@ -88,8 +91,10 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         if (inCount > 0) {
             const sectionSize = config.inCircleSection.end - config.inCircleSection.start;
             entityData.incoming.forEach((flowId, index) => {
-                const angle = config.inCircleSection.start +
+                const edge = diagram.edges.find(e => e.id === flowId);
+                const baseAngle = config.inCircleSection.start +
                     (sectionSize * (index + 1)) / (inCount + 1);
+                const angle = baseAngle + (edge?.targetAngleOffset || 0);
                 handles.push({ id: flowId, angle, type: 'target' });
             });
         }
@@ -99,8 +104,10 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         if (outCount > 0) {
             const sectionSize = config.outCircleSection.end - config.outCircleSection.start;
             entityData.outgoing.forEach((flowId, index) => {
-                const angle = config.outCircleSection.start +
+                const edge = diagram.edges.find(e => e.id === flowId);
+                const baseAngle = config.outCircleSection.start +
                     (sectionSize * (index + 1)) / (outCount + 1);
+                const angle = baseAngle + (edge?.sourceAngleOffset || 0);
                 handles.push({ id: flowId, angle, type: 'source' });
             });
         }
@@ -114,6 +121,69 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         return { top: `${y}px`, left: `${x}px` };
     };
 
+    // Calculate angle from mouse position relative to circle center
+    const getAngleFromMouse = (clientX: number, clientY: number): number => {
+        if (!nodeRef.current) return 0;
+        const rect = nodeRef.current.getBoundingClientRect();
+        const centerX = rect.left + diameter / 2;
+        const centerY = rect.top + diameter / 2;
+        const dx = clientX - centerX;
+        const dy = clientY - centerY;
+        let angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+        if (angle < 0) angle += 360;
+        return angle;
+    };
+
+    // Start dragging a handle
+    const onHandleMouseDown = (e: React.MouseEvent, handleId: string) => {
+        if (!selected) return;
+        e.stopPropagation();
+        e.preventDefault();
+        setDraggingHandleId(handleId);
+    };
+
+    // Handle mouse move - update handle position
+    useEffect(() => {
+        if (!draggingHandleId) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const edge = diagram.edges.find(ed => ed.id === draggingHandleId);
+            if (!edge) return;
+
+            const handle = handles.find(h => h.id === draggingHandleId);
+            if (!handle) return;
+
+            // Calculate base angle (original position without offset)
+            const currentOffset = handle.type === 'source'
+                ? (edge.sourceAngleOffset || 0)
+                : (edge.targetAngleOffset || 0);
+            const baseAngle = handle.angle - currentOffset;
+
+            // Get new angle from mouse
+            const newAngle = getAngleFromMouse(e.clientX, e.clientY);
+            const newOffset = newAngle - baseAngle;
+
+            // Update the edge with new offset
+            if (handle.type === 'source') {
+                updateEdge(draggingHandleId, { sourceAngleOffset: newOffset });
+            } else {
+                updateEdge(draggingHandleId, { targetAngleOffset: newOffset });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setDraggingHandleId(null);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [draggingHandleId, diagram.edges, handles, diameter, updateEdge]);
+
     // Handle resize event
     const onResize = (_event: any, params: any) => {
         // Use width for circular nodes (maintaining aspect ratio)
@@ -123,6 +193,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
 
     return (
         <div
+            ref={nodeRef}
             className={`${styles.processNode} ${selected ? styles.selected : ''}`}
             style={{ width: `${diameter}px`, height: `${diameter}px` }}
         >
@@ -142,21 +213,25 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             {/* Dynamic handles */}
             {handles.map(handle => {
                 const pos = getHandlePosition(handle.angle);
+                const isDragging = draggingHandleId === handle.id;
                 return (
                     <Handle
                         key={handle.id}
                         type={handle.type}
                         position={Position.Top}
                         id={handle.id}
+                        onMouseDown={(e) => onHandleMouseDown(e, handle.id)}
                         style={{
                             ...pos,
-                            width: 10,
-                            height: 10,
+                            width: isDragging ? 14 : 10,
+                            height: isDragging ? 14 : 10,
                             background: handle.type === 'source' ? '#34d399' : '#60a5fa',
                             border: '2px solid #fff',
                             position: 'absolute',
                             transform: 'translate(-50%, -50%)',
-                            zIndex: 10
+                            zIndex: 10,
+                            cursor: selected ? 'grab' : 'default',
+                            transition: isDragging ? 'none' : 'width 0.2s, height 0.2s'
                         }}
                     />
                 );
