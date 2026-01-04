@@ -1,0 +1,46 @@
+.canvasContainer {
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+}
+
+.diagramHeader {
+    background: #ffffff;
+    border-bottom: 3px solid #1e293b;
+    padding: 1rem 2rem;
+    text-align: center;
+}
+
+.diagramTitle {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.canvasWrapper {
+    flex: 1;
+    background: #ffffff;
+}
+
+/* Override React Flow marker styles to ensure arrows show */
+.canvasWrapper :global(.react-flow__edge-path) {
+    stroke: #1e293b;
+    stroke-width: 2;
+}
+
+.canvasWrapper :global(.react-flow__arrowhead) {
+    fill: #1e293b;
+}
+
+.canvasWrapper :global(.react-flow__edge) {
+    pointer-events: all;
+}
+
+.canvasWrapper :global(.react-flow__edge-text) {
+    font-size: 12px;
+    font-weight: 600;
+}
