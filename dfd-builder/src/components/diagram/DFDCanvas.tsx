@@ -40,7 +40,9 @@ export const DFDCanvas = () => {
             type: n.type,
             position: n.position,
             data: { ...n },
-            draggable: true
+            draggable: true,
+            selectable: true,
+            focusable: true
         }));
 
         const mappedEdges: Edge[] = diagram.edges.map(e => {
@@ -109,6 +111,9 @@ export const DFDCanvas = () => {
                     fitView
                     minZoom={0.5}
                     maxZoom={1.5}
+                    nodesFocusable={true}
+                    nodesConnectable={false}
+                    selectNodesOnDrag={false}
                     defaultEdgeOptions={{
                         type: 'orthogonal',
                         animated: false,

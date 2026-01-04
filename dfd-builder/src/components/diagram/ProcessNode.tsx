@@ -1,4 +1,4 @@
-import { Handle, Position, type NodeProps } from 'reactflow';
+import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
 import { type ProcessNode as ProcessNodeType } from '../../core/types';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './ProcessNode.module.css';
@@ -28,9 +28,11 @@ const QUADRANT_CONFIGS: Record<string, QuadrantConfig> = {
 };
 
 export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
-    const { diagram } = useDiagramStore();
+    const { diagram, updateNode } = useDiagramStore();
 
-    // Get all flows connected to this process
+    // Get custom diameter or use default
+    const diameter = data.diameter || 200;
+    const circleRadius = diameter / 2;
     const incomingFlows = diagram.edges.filter(e => e.targetNodeId === data.id);
     const outgoingFlows = diagram.edges.filter(e => e.sourceNodeId === data.id);
 
@@ -105,7 +107,6 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     });
 
     // Convert angle to position on circle
-    const circleRadius = 100; // 200px diameter / 2
     const getHandlePosition = (angle: number) => {
         const rad = (angle - 90) * (Math.PI / 180); // -90 to start from top
         const x = circleRadius + circleRadius * Math.cos(rad);
@@ -113,8 +114,31 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         return { top: `${y}px`, left: `${x}px` };
     };
 
+    // Handle resize event
+    const onResize = (_event: any, params: any) => {
+        // Use width for circular nodes (maintaining aspect ratio)
+        const newDiameter = Math.round(params.width);
+        updateNode(data.id, { diameter: newDiameter });
+    };
+
     return (
-        <div className={`${styles.processNode} ${selected ? styles.selected : ''}`}>
+        <div
+            className={`${styles.processNode} ${selected ? styles.selected : ''}`}
+            style={{ width: `${diameter}px`, height: `${diameter}px` }}
+        >
+            {/* Resize handles - only show when selected, lock aspect ratio for circle */}
+            <NodeResizer
+                isVisible={selected}
+                minWidth={120}
+                minHeight={120}
+                keepAspectRatio={true}
+                onResize={onResize}
+                handleStyle={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                }}
+            />
             {/* Dynamic handles */}
             {handles.map(handle => {
                 const pos = getHandlePosition(handle.angle);

@@ -1,6 +1,6 @@
 .entityNode {
-    width: 160px;
-    min-height: 80px;
+    /* Width and height will be set via inline styles for dynamic resizing */
+    min-height: 60px;
     display: flex;
     align-items: center;
     justify-content: center;

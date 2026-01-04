@@ -14,12 +14,15 @@ export interface DFDNodeBase {
 // Concrete Node Types
 export interface EntityNode extends DFDNodeBase {
     type: 'entity';
+    width?: number;  // Optional custom width (default: 160px)
+    height?: number; // Optional custom height (default: 80px)
     // Optional: Role metadata if needed (e.g., 'admin', 'customer')
 }
 
 export interface ProcessNode extends DFDNodeBase {
     type: 'process';
     processNumber: string; // "0.0", "1.0", "3.2"
+    diameter?: number; // Optional custom diameter (default: 200px)
     parentProcessId?: string | null; // For Level 2, links to parent Level 1 process
 }
 

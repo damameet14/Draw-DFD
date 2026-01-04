@@ -1,6 +1,5 @@
 .processNode {
-    width: 200px;
-    height: 200px;
+    /* Width and height will be set via inline styles for dynamic resizing */
     border-radius: 50%;
     display: flex;
     flex-direction: column;

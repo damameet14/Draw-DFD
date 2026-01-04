@@ -1,4 +1,4 @@
-import { Handle, Position, type NodeProps } from 'reactflow';
+import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
 import { type EntityNode as EntityNodeType } from '../../core/types';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './EntityNode.module.css';
@@ -28,7 +28,11 @@ const QUADRANT_HANDLE_CONFIGS: Record<string, QuadrantHandleConfig> = {
 };
 
 export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
-    const { diagram } = useDiagramStore();
+    const { diagram, updateNode } = useDiagramStore();
+
+    // Get custom dimensions or use defaults
+    const width = data.width || 160;
+    const height = data.height || 80;
 
     // Determine this entity's quadrant based on order
     const entityNodes = diagram.nodes.filter(n => n.type === 'entity');
@@ -102,8 +106,31 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         handlesByPosition.get(h.position)!.push(h);
     });
 
+    // Handle resize event
+    const onResize = (_event: any, params: any) => {
+        const newWidth = Math.round(params.width);
+        const newHeight = Math.round(params.height);
+        updateNode(data.id, { width: newWidth, height: newHeight });
+    };
+
     return (
-        <div className={`${styles.entityNode} ${selected ? styles.selected : ''}`}>
+        <div
+            className={`${styles.entityNode} ${selected ? styles.selected : ''}`}
+            style={{ width: `${width}px`, height: `${height}px` }}
+        >
+            {/* Resize handles - only show when selected */}
+            <NodeResizer
+                isVisible={selected}
+                minWidth={100}
+                minHeight={60}
+                onResize={onResize}
+                handleStyle={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                }}
+            />
+
             {/* Dynamic handles */}
             {Array.from(handlesByPosition.entries()).map(([position, posHandles]) =>
                 posHandles.map((handle, index) => (
