@@ -1,30 +1,30 @@
 import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
+import { useState, useEffect, useRef } from 'react';
 import { type ProcessNode as ProcessNodeType } from '../../core/types';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './ProcessNode.module.css';
-import { useState, useEffect, useRef } from 'react';
 
-type QuadrantConfig = {
-    inCircleSection: { start: number, end: number }; // Angles for IN handles on circle
-    outCircleSection: { start: number, end: number }; // Angles for OUT handles on circle
+type QuadrantHandleConfig = {
+    inCircleSection: { start: number; end: number };
+    outCircleSection: { start: number; end: number };
 };
 
-const QUADRANT_CONFIGS: Record<string, QuadrantConfig> = {
+const QUADRANT_CONFIGS: Record<string, QuadrantHandleConfig> = {
     'top-left': {
-        inCircleSection: { start: 340, end: 360 },      // Top of circle (near north)
-        outCircleSection: { start: 250, end: 290 }      // Left side of circle (west)
+        inCircleSection: { start: 180, end: 270 },  // IN: Bottom-left quarter
+        outCircleSection: { start: 270, end: 360 }  // OUT: Bottom-right quarter
     },
     'top-right': {
-        inCircleSection: { start: 0, end: 20 },         // Top-right of circle  
-        outCircleSection: { start: 70, end: 110 }       // Right side of circle (east)
+        inCircleSection: { start: 180, end: 270 },  // IN: Bottom-left quarter
+        outCircleSection: { start: 90, end: 180 }   // OUT: Top-left quarter
     },
     'bottom-left': {
-        inCircleSection: { start: 200, end: 240 },      // Left-bottom of circle
-        outCircleSection: { start: 160, end: 200 }      // Bottom of circle (south)
+        inCircleSection: { start: 270, end: 360 },  // IN: Top-right quarter
+        outCircleSection: { start: 0, end: 90 }     // OUT: Top-left quarter
     },
     'bottom-right': {
-        inCircleSection: { start: 120, end: 160 },      // Right-bottom of circle
-        outCircleSection: { start: 160, end: 200 }      // Bottom of circle (south)
+        inCircleSection: { start: 0, end: 90 },     // IN: Top-left quarter
+        outCircleSection: { start: 90, end: 180 }   // OUT: Top-right quarter
     }
 };
 
@@ -39,7 +39,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     const incomingFlows = diagram.edges.filter(e => e.targetNodeId === data.id);
     const outgoingFlows = diagram.edges.filter(e => e.sourceNodeId === data.id);
 
-    // Group flows by entity and assign quadrants based on entity order
+    // Separate entity flows and datastore flows
     const entityFlows = new Map<string, {
         incoming: string[],
         outgoing: string[],
@@ -47,10 +47,16 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         index: number
     }>();
 
+    const datastoreFlows = {
+        incoming: [] as string[],
+        outgoing: [] as string[]
+    };
+
     // Get all entity nodes
     const entityNodes = diagram.nodes.filter(n => n.type === 'entity');
     const quadrantOrder = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
+    // Initialize entity flows map
     entityNodes.forEach((entity, index) => {
         const quadrant = quadrantOrder[index % 4];
         entityFlows.set(entity.id, {
@@ -61,32 +67,43 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         });
     });
 
-    // Categorize flows
+    // Categorize flows by source/target type
     incomingFlows.forEach(flow => {
-        const entityData = entityFlows.get(flow.sourceNodeId);
-        if (entityData) {
-            entityData.incoming.push(flow.id);
+        const sourceNode = diagram.nodes.find(n => n.id === flow.sourceNodeId);
+        if (sourceNode?.type === 'entity') {
+            const entityData = entityFlows.get(flow.sourceNodeId);
+            if (entityData) {
+                entityData.incoming.push(flow.id);
+            }
+        } else if (sourceNode?.type === 'datastore') {
+            datastoreFlows.incoming.push(flow.id);
         }
     });
 
     outgoingFlows.forEach(flow => {
-        const entityData = entityFlows.get(flow.targetNodeId);
-        if (entityData) {
-            entityData.outgoing.push(flow.id);
+        const targetNode = diagram.nodes.find(n => n.id === flow.targetNodeId);
+        if (targetNode?.type === 'entity') {
+            const entityData = entityFlows.get(flow.targetNodeId);
+            if (entityData) {
+                entityData.outgoing.push(flow.id);
+            }
+        } else if (targetNode?.type === 'datastore') {
+            datastoreFlows.outgoing.push(flow.id);
         }
     });
 
-    // Generate handles based on quadrant configuration
+    // Generate handles
     const handles: Array<{
         id: string,
         angle: number,
         type: 'source' | 'target'
     }> = [];
 
+    // Entity flow handles (use quadrants)
     entityFlows.forEach((entityData) => {
         const config = QUADRANT_CONFIGS[entityData.quadrant];
 
-        // IN handles (incoming to process)
+        // IN handles (entity → process)
         const inCount = entityData.incoming.length;
         if (inCount > 0) {
             const sectionSize = config.inCircleSection.end - config.inCircleSection.start;
@@ -99,7 +116,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             });
         }
 
-        // OUT handles (outgoing from process)
+        // OUT handles (process → entity)
         const outCount = entityData.outgoing.length;
         if (outCount > 0) {
             const sectionSize = config.outCircleSection.end - config.outCircleSection.start;
@@ -112,6 +129,37 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             });
         }
     });
+
+    // Datastore flow handles (use right side of circle: 315-45 degrees)
+    // IN handles (datastore → process) - bottom-right quadrant (315-360)
+    const dsInCount = datastoreFlows.incoming.length;
+    if (dsInCount > 0) {
+        const startAngle = 315;  // Bottom-right
+        const endAngle = 360;
+        const sectionSize = endAngle - startAngle;
+
+        datastoreFlows.incoming.forEach((flowId, index) => {
+            const edge = diagram.edges.find(e => e.id === flowId);
+            const baseAngle = startAngle + (sectionSize * (index + 1)) / (dsInCount + 1);
+            const angle = baseAngle + (edge?.targetAngleOffset || 0);
+            handles.push({ id: flowId, angle, type: 'target' });
+        });
+    }
+
+    // OUT handles (process → datastore) - top-right quadrant (0-45)
+    const dsOutCount = datastoreFlows.outgoing.length;
+    if (dsOutCount > 0) {
+        const startAngle = 0;    // Top-right
+        const endAngle = 45;
+        const sectionSize = endAngle - startAngle;
+
+        datastoreFlows.outgoing.forEach((flowId, index) => {
+            const edge = diagram.edges.find(e => e.id === flowId);
+            const baseAngle = startAngle + (sectionSize * (index + 1)) / (dsOutCount + 1);
+            const angle = baseAngle + (edge?.sourceAngleOffset || 0);
+            handles.push({ id: flowId, angle, type: 'source' });
+        });
+    }
 
     // Convert angle to position on circle
     const getHandlePosition = (angle: number) => {
@@ -157,6 +205,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             const currentOffset = handle.type === 'source'
                 ? (edge.sourceAngleOffset || 0)
                 : (edge.targetAngleOffset || 0);
+
             const baseAngle = handle.angle - currentOffset;
 
             // Get new angle from mouse
@@ -182,12 +231,11 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [draggingHandleId, diagram.edges, handles, diameter, updateEdge]);
+    }, [draggingHandleId, diagram.edges, handles, updateEdge]);
 
     // Handle resize event
     const onResize = (_event: any, params: any) => {
-        // Use width for circular nodes (maintaining aspect ratio)
-        const newDiameter = Math.round(params.width);
+        const newDiameter = Math.round(Math.max(params.width, params.height));
         updateNode(data.id, { diameter: newDiameter });
     };
 
@@ -197,11 +245,11 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             className={`${styles.processNode} ${selected ? styles.selected : ''}`}
             style={{ width: `${diameter}px`, height: `${diameter}px` }}
         >
-            {/* Resize handles - only show when selected, lock aspect ratio for circle */}
+            {/* Resize handles - only show when selected */}
             <NodeResizer
                 isVisible={selected}
-                minWidth={120}
-                minHeight={120}
+                minWidth={150}
+                minHeight={150}
                 keepAspectRatio={true}
                 onResize={onResize}
                 handleStyle={{
@@ -210,6 +258,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
                     borderRadius: '50%',
                 }}
             />
+
             {/* Dynamic handles */}
             {handles.map(handle => {
                 const pos = getHandlePosition(handle.angle);
@@ -237,8 +286,10 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
                 );
             })}
 
-            <div className={styles.processNumber}>{data.processNumber}</div>
-            <div className={styles.processLabel}>{data.label}</div>
+            <div className={styles.processCircle}>
+                <div className={styles.processLabel}>{data.processNumber}</div>
+                <div className={styles.processName}>{data.label}</div>
+            </div>
         </div>
     );
 };

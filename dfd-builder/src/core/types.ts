@@ -43,6 +43,7 @@ export interface DFDEdge {
     level: DFDLevel;
     sourceAngleOffset?: number; // Angle offset in degrees for source handle on process circles
     targetAngleOffset?: number; // Angle offset in degrees for target handle on process circles
+    arrowDirection?: 'horizontal-first' | 'vertical-first'; // Manual arrow path direction
 }
 
 // Diagram Interface
