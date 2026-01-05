@@ -1,6 +1,7 @@
 .dataStoreNode {
-    width: 160px;
-    height: 48px;
+    /* Width and height set via inline styles for dynamic sizing */
+    min-width: 140px;
+    min-height: 40px;
     display: flex;
     align-items: center;
     position: relative;

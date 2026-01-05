@@ -8,6 +8,42 @@
     color: #1e293b;
 }
 
+/* Tab System */
+.tabContainer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 100;
+    display: flex;
+    gap: 0;
+    background: transparent;
+    padding: 0.5rem;
+}
+
+.tab {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 0.5rem 0.5rem 0 0;
+    backdrop-filter: blur(10px);
+}
+
+.tab:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.tabActive {
+    background: white;
+    color: #667eea;
+    font-weight: 700;
+}
+
 .mainContent {
     flex: 1;
     position: relative;

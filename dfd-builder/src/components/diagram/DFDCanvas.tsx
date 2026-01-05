@@ -17,6 +17,7 @@ import { DataStoreNode } from './DataStoreNode';
 import { CustomOrthogonalEdge } from './CustomOrthogonalEdge';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './DFDCanvas.module.css';
+import { type DFDLevel } from '../../core/types';
 
 const nodeTypes: NodeTypes = {
     process: ProcessNode,
@@ -28,14 +29,22 @@ const edgeTypes: EdgeTypes = {
     orthogonal: CustomOrthogonalEdge,
 };
 
-export const DFDCanvas = () => {
+interface DFDCanvasProps {
+    currentLevel: DFDLevel;
+}
+
+export const DFDCanvas = ({ currentLevel }: DFDCanvasProps) => {
     const { diagram, updateNode } = useDiagramStore();
 
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
     useEffect(() => {
-        const mappedNodes = diagram.nodes.map(n => ({
+        // Filter nodes and edges by current level
+        const levelNodes = diagram.nodes.filter(n => n.level === currentLevel);
+        const levelEdges = diagram.edges.filter(e => e.level === currentLevel);
+
+        const mappedNodes = levelNodes.map(n => ({
             id: n.id,
             type: n.type,
             position: n.position,
@@ -45,7 +54,7 @@ export const DFDCanvas = () => {
             focusable: true
         }));
 
-        const mappedEdges: Edge[] = diagram.edges.map(e => {
+        const mappedEdges: Edge[] = levelEdges.map(e => {
             // Use edge ID as both source and target handle ID
             // This matches the dynamic handles created in ProcessNode and EntityNode
             const sourceHandle = e.id;
@@ -88,7 +97,7 @@ export const DFDCanvas = () => {
 
         setNodes(mappedNodes);
         setEdges(mappedEdges);
-    }, [diagram.nodes, diagram.edges, setNodes, setEdges]);
+    }, [diagram.nodes, diagram.edges, currentLevel, setNodes, setEdges]);
 
     const onNodeDragStop = useCallback((_event: any, node: any) => {
         updateNode(node.id, { position: node.position });
@@ -97,7 +106,9 @@ export const DFDCanvas = () => {
     return (
         <div className={styles.canvasContainer}>
             <div className={styles.diagramHeader}>
-                <h1 className={styles.diagramTitle}>Context Level DFD</h1>
+                <h1 className={styles.diagramTitle}>
+                    {currentLevel === 0 ? 'Context Level DFD' : 'Level 1 DFD'}
+                </h1>
             </div>
             <div className={styles.canvasWrapper}>
                 <ReactFlow

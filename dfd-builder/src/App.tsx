@@ -1,38 +1,36 @@
+import { useState } from 'react';
 import { DFDCanvas } from './components/diagram/DFDCanvas';
 import { Level0Form } from './components/forms/Level0Form';
-import { useDiagramStore } from './store/useDiagramStore';
-import { AlertTriangle, CheckCircle } from 'lucide-react';
+import { Level1Form } from './components/forms/Level1Form';
 import styles from './App.module.css';
+import { type DFDLevel } from './core/types';
 
 function App() {
-  const { validationResults } = useDiagramStore();
+  const [currentLevel, setCurrentLevel] = useState<DFDLevel>(0);
 
   return (
     <div className={styles.appContainer}>
-      <Level0Form />
+      {/* Level Tabs */}
+      <div className={styles.tabContainer}>
+        <button
+          className={`${styles.tab} ${currentLevel === 0 ? styles.tabActive : ''}`}
+          onClick={() => setCurrentLevel(0)}
+        >
+          Level 0
+        </button>
+        <button
+          className={`${styles.tab} ${currentLevel === 1 ? styles.tabActive : ''}`}
+          onClick={() => setCurrentLevel(1)}
+        >
+          Level 1
+        </button>
+      </div>
+
+      {/* Conditional Form Rendering */}
+      {currentLevel === 0 ? <Level0Form /> : <Level1Form />}
 
       <main className={styles.mainContent}>
-        <div className={styles.validationBar}>
-          {validationResults.map(result => (
-            <div
-              key={result.id}
-              className={`${styles.validationAlert} ${result.severity === 'error' ? styles.validationError :
-                  result.severity === 'warning' ? styles.validationWarning :
-                    styles.validationInfo
-                }`}
-            >
-              <AlertTriangle size={16} />
-              <span>[{result.ruleCode}] {result.message}</span>
-            </div>
-          ))}
-          {validationResults.length === 0 && (
-            <div className={styles.validationSuccess}>
-              <CheckCircle size={12} /> Valid DFD
-            </div>
-          )}
-        </div>
-
-        <DFDCanvas />
+        <DFDCanvas currentLevel={currentLevel} />
       </main>
     </div>
   );
