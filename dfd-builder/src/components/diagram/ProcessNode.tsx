@@ -12,20 +12,20 @@ type QuadrantHandleConfig = {
 
 const QUADRANT_CONFIGS: Record<string, QuadrantHandleConfig> = {
     'top-left': {
-        inCircleSection: { start: 180, end: 270 },  // IN: Bottom-left quarter
-        outCircleSection: { start: 270, end: 360 }  // OUT: Bottom-right quarter
+        inCircleSection: { start: 358, end: 328 },   // IN: Top of circle (from top-left entity)
+        outCircleSection: { start: 315, end: 285 }  // OUT: Bottom-left of circle (to top-left entity)
     },
     'top-right': {
-        inCircleSection: { start: 180, end: 270 },  // IN: Bottom-left quarter
-        outCircleSection: { start: 90, end: 180 }   // OUT: Top-left quarter
+        inCircleSection: { start: 2, end: 40 },    // IN: Top-right of circle (from top-right entity)
+        outCircleSection: { start: 45, end: 88 }  // OUT: Bottom-right of circle (to top-right entity)
     },
     'bottom-left': {
-        inCircleSection: { start: 270, end: 360 },  // IN: Top-right quarter
-        outCircleSection: { start: 0, end: 90 }     // OUT: Top-left quarter
+        inCircleSection: { start: 93, end: 125 },  // IN: Left of circle (from bottom-left entity)
+        outCircleSection: { start: 130, end: 165 }  // OUT: Bottom of circle (to bottom-left entity)
     },
     'bottom-right': {
-        inCircleSection: { start: 0, end: 90 },     // IN: Top-left quarter
-        outCircleSection: { start: 90, end: 180 }   // OUT: Top-right quarter
+        inCircleSection: { start: 182, end: 215 },   // IN: Top-right of circle (from bottom-right entity) - wraps 0°
+        outCircleSection: { start: 219, end: 240 }  // OUT: Bottom of circle (to bottom-right entity)
     }
 };
 

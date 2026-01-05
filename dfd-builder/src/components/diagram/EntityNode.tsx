@@ -86,11 +86,48 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         return encoded;
     };
 
-    // Map edges to handles with side-based positioning
+    // Determine entity's position/quadrant (based on ProcessNode's quadrant assignment)
+    const getEntityPosition = (): 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' => {
+        const entityNodes = diagram.nodes.filter(n => n.type === 'entity');
+        const entityIndex = entityNodes.findIndex(n => n.id === data.id);
+        const quadrantOrder = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+        return quadrantOrder[entityIndex % 4] as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+    };
+
+    // Get default handle side based on entity position
+    const getDefaultHandleSide = (isIncoming: boolean): 'top' | 'right' | 'bottom' | 'left' => {
+        const position = getEntityPosition();
+
+        if (isIncoming) {
+            // IN handles (Process -> Entity) - User's "OUT" column
+            switch (position) {
+                case 'top-left': return 'bottom';
+                case 'top-right': return 'bottom';
+                case 'bottom-left': return 'top';
+                case 'bottom-right': return 'top';
+            }
+        } else {
+            // OUT handles (Entity -> Process) - User's "IN" column
+            switch (position) {
+                case 'top-left': return 'right';
+                case 'top-right': return 'left';
+                case 'bottom-left': return 'right';
+                case 'bottom-right': return 'right';
+            }
+        }
+        // Fallback
+        return 'right';
+    };
+
+    // Generate handles for incoming flows (entity as target)
     incomingFlows.forEach(flow => {
-        const edge = diagram.edges.find(e => e.id === flow.id);
-        const encodedOffset = edge?.targetAngleOffset || 0;
-        const { side, offset } = decodePosition(encodedOffset);
+        const defaultSide = getDefaultHandleSide(true);
+        const defaultOffset = 50; // Center of the side
+        const defaultEncoded = encodePosition(defaultSide, defaultOffset);
+
+        const storedOffset = flow.targetAngleOffset || defaultEncoded;
+        const { side, offset } = decodePosition(storedOffset);
+
         handles.push({
             id: flow.id,
             side,
@@ -99,10 +136,14 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         });
     });
 
+    // Generate handles for outgoing flows (entity as source)
     outgoingFlows.forEach(flow => {
-        const edge = diagram.edges.find(e => e.id === flow.id);
-        const encodedOffset = edge?.sourceAngleOffset || 0;
-        const { side, offset } = decodePosition(encodedOffset);
+        const defaultSide = getDefaultHandleSide(false);
+        const defaultOffset = 50; // Center of the side
+        const defaultEncoded = encodePosition(defaultSide, defaultOffset);
+
+        const storedOffset = flow.sourceAngleOffset || defaultEncoded;
+        const { side, offset } = decodePosition(storedOffset);
         handles.push({
             id: flow.id,
             side,
