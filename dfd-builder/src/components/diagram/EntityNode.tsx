@@ -30,54 +30,65 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         type: 'source' | 'target'
     }> = [];
 
-    // Helper to get side and offset from stored angleOffsets
-    // We'll use sourceAngleOffset for X coordinate and targetAngleOffset for Y coordinate
-    const getSideAndOffset = (edge: any, isSource: boolean): { side: 'top' | 'right' | 'bottom' | 'left', offset: number } => {
-        const xOffset = edge.sourceAngleOffset || 0;
-        const yOffset = edge.targetAngleOffset || 0;
+    // Helper to decode position from single offset value
+    // Format: side is encoded in ranges: 0-25=top, 25-50=right, 50-75=bottom, 75-100=left
+    // Within each range, the exact position along that side is encoded
+    const decodePosition = (encodedOffset: number): { side: 'top' | 'right' | 'bottom' | 'left', offset: number } => {
+        if (encodedOffset === 0) {
+            // Default position
+            return { side: 'right', offset: 50 };
+        }
 
-        // Convert X,Y offsets to side and offset along that side
-        // Default positions based on flow direction
-        let side: 'top' | 'right' | 'bottom' | 'left' = isSource ? 'right' : 'bottom';
-        let offset = 50; // Default to middle
+        // Decode side from range
+        const normalizedOffset = Math.max(0, Math.min(100, encodedOffset));
+        let side: 'top' | 'right' | 'bottom' | 'left';
+        let offset: number;
 
-        // If custom offsets are set, use them to determine position
-        // X: 0-100 represents left to right
-        // Y: 0-100 represents top to bottom
-
-        // Determine which edge the point is closest to
-        const x = Math.max(0, Math.min(100, xOffset !== 0 ? xOffset : 50));
-        const y = Math.max(0, Math.min(100, yOffset !== 0 ? yOffset : 50));
-
-        // Find closest edge
-        const distToTop = y;
-        const distToBottom = 100 - y;
-        const distToLeft = x;
-        const distToRight = 100 - x;
-
-        const minDist = Math.min(distToTop, distToBottom, distToLeft, distToRight);
-
-        if (minDist === distToTop) {
+        if (normalizedOffset >= 0 && normalizedOffset < 25) {
             side = 'top';
-            offset = x;
-        } else if (minDist === distToBottom) {
-            side = 'bottom';
-            offset = x;
-        } else if (minDist === distToLeft) {
-            side = 'left';
-            offset = y;
-        } else {
+            offset = (normalizedOffset / 25) * 100;
+        } else if (normalizedOffset >= 25 && normalizedOffset < 50) {
             side = 'right';
-            offset = y;
+            offset = ((normalizedOffset - 25) / 25) * 100;
+        } else if (normalizedOffset >= 50 && normalizedOffset < 75) {
+            side = 'bottom';
+            offset = ((normalizedOffset - 50) / 25) * 100;
+        } else {
+            side = 'left';
+            offset = ((normalizedOffset - 75) / 25) * 100;
         }
 
         return { side, offset };
     };
 
+    // Helper to encode position into single offset value
+    const encodePosition = (side: 'top' | 'right' | 'bottom' | 'left', offset: number): number => {
+        const normalizedOffset = Math.max(0, Math.min(100, offset));
+        let encoded: number;
+
+        switch (side) {
+            case 'top':
+                encoded = (normalizedOffset / 100) * 25;
+                break;
+            case 'right':
+                encoded = 25 + (normalizedOffset / 100) * 25;
+                break;
+            case 'bottom':
+                encoded = 50 + (normalizedOffset / 100) * 25;
+                break;
+            case 'left':
+                encoded = 75 + (normalizedOffset / 100) * 25;
+                break;
+        }
+
+        return encoded;
+    };
+
     // Map edges to handles with side-based positioning
     incomingFlows.forEach(flow => {
         const edge = diagram.edges.find(e => e.id === flow.id);
-        const { side, offset } = getSideAndOffset(edge, false);
+        const encodedOffset = edge?.targetAngleOffset || 0;
+        const { side, offset } = decodePosition(encodedOffset);
         handles.push({
             id: flow.id,
             side,
@@ -88,7 +99,8 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
 
     outgoingFlows.forEach(flow => {
         const edge = diagram.edges.find(e => e.id === flow.id);
-        const { side, offset } = getSideAndOffset(edge, true);
+        const encodedOffset = edge?.sourceAngleOffset || 0;
+        const { side, offset } = decodePosition(encodedOffset);
         handles.push({
             id: flow.id,
             side,
@@ -127,8 +139,8 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
     };
 
     // Calculate new side and offset from mouse position
-    const getNewPositionFromMouse = (clientX: number, clientY: number): { x: number, y: number } => {
-        if (!nodeRef.current) return { x: 50, y: 50 };
+    const getNewPositionFromMouse = (clientX: number, clientY: number): { side: 'top' | 'right' | 'bottom' | 'left', offset: number } => {
+        if (!nodeRef.current) return { side: 'right', offset: 50 };
 
         const rect = nodeRef.current.getBoundingClientRect();
 
@@ -140,7 +152,32 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         const x = Math.max(0, Math.min(100, relX));
         const y = Math.max(0, Math.min(100, relY));
 
-        return { x, y };
+        // Determine which edge is closest
+        const distToTop = y;
+        const distToBottom = 100 - y;
+        const distToLeft = x;
+        const distToRight = 100 - x;
+
+        const minDist = Math.min(distToTop, distToBottom, distToLeft, distToRight);
+
+        let side: 'top' | 'right' | 'bottom' | 'left';
+        let offset: number;
+
+        if (minDist === distToTop) {
+            side = 'top';
+            offset = x;
+        } else if (minDist === distToBottom) {
+            side = 'bottom';
+            offset = x;
+        } else if (minDist === distToLeft) {
+            side = 'left';
+            offset = y;
+        } else {
+            side = 'right';
+            offset = y;
+        }
+
+        return { side, offset };
     };
 
     // Start dragging a handle
@@ -159,14 +196,21 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
             const edge = diagram.edges.find(ed => ed.id === draggingHandleId);
             if (!edge) return;
 
-            // Get new position from mouse
-            const { x, y } = getNewPositionFromMouse(e.clientX, e.clientY);
+            const handle = handles.find(h => h.id === draggingHandleId);
+            if (!handle) return;
 
-            // Store as X,Y coordinates (will be converted to side/offset on next render)
-            updateEdge(draggingHandleId, {
-                sourceAngleOffset: x,
-                targetAngleOffset: y
-            });
+            // Get new position from mouse
+            const { side, offset } = getNewPositionFromMouse(e.clientX, e.clientY);
+
+            // Encode position as single value
+            const encodedOffset = encodePosition(side, offset);
+
+            // Update only the appropriate field for this handle
+            if (handle.type === 'source') {
+                updateEdge(draggingHandleId, { sourceAngleOffset: encodedOffset });
+            } else {
+                updateEdge(draggingHandleId, { targetAngleOffset: encodedOffset });
+            }
         };
 
         const handleMouseUp = () => {
@@ -180,7 +224,7 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [draggingHandleId, diagram.edges, updateEdge]);
+    }, [draggingHandleId, diagram.edges, handles, updateEdge]);
 
     // Handle resize event
     const onResize = (_event: any, params: any) => {

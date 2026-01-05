@@ -99,7 +99,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         type: 'source' | 'target'
     }> = [];
 
-    // Entity flow handles (use quadrants)
+    // Entity flow handles (LEFT SIDE: 180-360 degrees)
     entityFlows.forEach((entityData) => {
         const config = QUADRANT_CONFIGS[entityData.quadrant];
 
@@ -130,12 +130,12 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         }
     });
 
-    // Datastore flow handles (use right side of circle: 315-45 degrees)
-    // IN handles (datastore → process) - bottom-right quadrant (315-360)
+    // Datastore flow handles (RIGHT SIDE: 0-180 degrees)
+    // IN handles (datastore → process) - bottom-right area (90-180)
     const dsInCount = datastoreFlows.incoming.length;
     if (dsInCount > 0) {
-        const startAngle = 315;  // Bottom-right
-        const endAngle = 360;
+        const startAngle = 90;   // Right side
+        const endAngle = 180;    // Bottom-right
         const sectionSize = endAngle - startAngle;
 
         datastoreFlows.incoming.forEach((flowId, index) => {
@@ -146,11 +146,11 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         });
     }
 
-    // OUT handles (process → datastore) - top-right quadrant (0-45)
+    // OUT handles (process → datastore) - top-right area (0-90)
     const dsOutCount = datastoreFlows.outgoing.length;
     if (dsOutCount > 0) {
-        const startAngle = 0;    // Top-right
-        const endAngle = 45;
+        const startAngle = 0;    // Top
+        const endAngle = 90;     // Right side
         const sectionSize = endAngle - startAngle;
 
         datastoreFlows.outgoing.forEach((flowId, index) => {

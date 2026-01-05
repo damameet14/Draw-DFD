@@ -1,4 +1,4 @@
-import { type FC } from 'react';
+import { type FC, useState, useEffect } from 'react';
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from 'reactflow';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import { RotateCw } from 'lucide-react';
@@ -15,10 +15,12 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
     style
 }) => {
     const { diagram, updateEdge } = useDiagramStore();
+    const [isLabelSelected, setIsLabelSelected] = useState(false);
 
-    // Get the actual edge from the store to get the latest arrow direction
+    // Get the actual edge from the store to get the latest arrow direction and label offset
     const edge = diagram.edges.find(e => e.id === id);
     const storedDirection = edge?.arrowDirection as 'horizontal-first' | 'vertical-first' | undefined;
+    const labelOffset = edge?.labelOffset ?? 0.5; // Default to center (0.5)
 
     let path = '';
     let labelX = 0;
@@ -34,17 +36,47 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
         currentDirection = 'horizontal-first';
     }
 
-    // Create path based on direction
+    // Create path based on direction and calculate label position
     if (currentDirection === 'horizontal-first') {
         // Horizontal first, then vertical
         path = `M ${sourceX},${sourceY} L ${targetX},${sourceY} L ${targetX},${targetY}`;
-        labelX = (sourceX + targetX) / 2;
-        labelY = sourceY;
+
+        // Calculate label position along path based on labelOffset
+        const horizontalLength = Math.abs(targetX - sourceX);
+        const verticalLength = Math.abs(targetY - sourceY);
+        const totalLength = horizontalLength + verticalLength;
+        const offsetDistance = totalLength * labelOffset;
+
+        if (offsetDistance <= horizontalLength) {
+            // Label is on horizontal segment
+            labelX = sourceX + (targetX - sourceX) * (offsetDistance / horizontalLength);
+            labelY = sourceY;
+        } else {
+            // Label is on vertical segment
+            labelX = targetX;
+            const verticalOffset = offsetDistance - horizontalLength;
+            labelY = sourceY + (targetY - sourceY) * (verticalOffset / verticalLength);
+        }
     } else {
         // Vertical first, then horizontal
         path = `M ${sourceX},${sourceY} L ${sourceX},${targetY} L ${targetX},${targetY}`;
-        labelX = sourceX;
-        labelY = (sourceY + targetY) / 2;
+
+        // Calculate label position along path based on labelOffset
+        const verticalLength = Math.abs(targetY - sourceY);
+        const horizontalLength = Math.abs(targetX - sourceX);
+        const totalLength = verticalLength + horizontalLength;
+        const offsetDistance = totalLength * labelOffset;
+
+        if (offsetDistance <= verticalLength) {
+            // Label is on vertical segment
+            labelX = sourceX;
+            labelY = sourceY + (targetY - sourceY) * (offsetDistance / verticalLength);
+        } else {
+            // Label is on horizontal segment
+            const horizontalOffset = offsetDistance - verticalLength;
+            labelX = sourceX + (targetX - sourceX) * (horizontalOffset / horizontalLength);
+            labelY = targetY;
+        }
     }
 
     // Toggle arrow direction
@@ -53,10 +85,47 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
         e.preventDefault();
 
         const newDirection = currentDirection === 'horizontal-first' ? 'vertical-first' : 'horizontal-first';
-        console.log(`Toggling edge ${id} from ${currentDirection} to ${newDirection}`);
-
         updateEdge(id, { arrowDirection: newDirection });
     };
+
+    // Handle label click to select
+    const handleLabelClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setIsLabelSelected(true);
+    };
+
+    // Handle keyboard arrow keys to move label
+    useEffect(() => {
+        if (!isLabelSelected) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                const newOffset = Math.max(0.1, labelOffset - 0.05);
+                updateEdge(id, { labelOffset: newOffset });
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                const newOffset = Math.min(0.9, labelOffset + 0.05);
+                updateEdge(id, { labelOffset: newOffset });
+            } else if (e.key === 'Escape') {
+                setIsLabelSelected(false);
+            }
+        };
+
+        const handleClickOutside = () => {
+            // Deselect if clicking outside
+            setIsLabelSelected(false);
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('mousedown', handleClickOutside);
+
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isLabelSelected, labelOffset, id, updateEdge]);
 
     return (
         <>
@@ -111,21 +180,27 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
                         <RotateCw size={14} />
                     </button>
 
-                    {/* Label */}
+                    {/* Label - click to select, use arrows to move */}
                     {label && (
                         <div
+                            onClick={handleLabelClick}
+                            onMouseDown={(e) => e.stopPropagation()}
                             style={{
-                                background: '#ffffff',
+                                background: isLabelSelected ? '#dbeafe' : '#ffffff',
                                 padding: '2px 6px',
                                 borderRadius: '3px',
                                 fontSize: 12,
                                 fontWeight: 600,
                                 color: '#1e293b',
-                                border: '1px solid #e2e8f0',
-                                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                                border: isLabelSelected ? '2px solid #3b82f6' : '1px solid #e2e8f0',
+                                boxShadow: isLabelSelected ? '0 0 0 3px rgba(59, 130, 246, 0.2)' : '0 1px 2px rgba(0, 0, 0, 0.05)',
                                 whiteSpace: 'nowrap',
-                                pointerEvents: 'none'
+                                cursor: 'pointer',
+                                pointerEvents: 'all',
+                                userSelect: 'none',
+                                transition: 'all 0.2s'
                             }}
+                            title={isLabelSelected ? "Use ← → arrows to move, ESC to deselect" : "Click to select, then use arrow keys"}
                         >
                             {label}
                         </div>
