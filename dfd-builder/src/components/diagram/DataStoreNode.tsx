@@ -2,10 +2,12 @@ import { Handle, Position, type NodeProps } from 'reactflow';
 import { type DataStoreNode as DataStoreNodeType } from '../../core/types';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './DataStoreNode.module.css';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
+import { UIVisibilityContext } from '../../App';
 
 export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) => {
     const { diagram, updateEdge } = useDiagramStore();
+    const { showHandles } = useContext(UIVisibilityContext);
     const [draggingHandleId, setDraggingHandleId] = useState<string | null>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
 
@@ -16,71 +18,111 @@ export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) 
     const incomingFlows = diagram.edges.filter(e => e.targetNodeId === data.id);
     const outgoingFlows = diagram.edges.filter(e => e.sourceNodeId === data.id);
 
-    // Generate handles - distribute them across the node area
+    // Generate handles - restrict to top/bottom edges only
     const handles: Array<{
         id: string,
-        x: number,  // X position in pixels from left
-        y: number,  // Y position in pixels from top
+        edge: 'top' | 'bottom',  // Which edge (top or bottom)
+        offset: number,  // Horizontal position along edge (0-100%)
         type: 'source' | 'target'
     }> = [];
 
-    // Position incoming handles (targets) on left half
-    incomingFlows.forEach((flow, index) => {
-        const edge = diagram.edges.find(e => e.id === flow.id);
-        const baseX = nodeWidth * 0.25; // Default to 25% from left
-        const baseY = ((index + 1) / (incomingFlows.length + 1)) * nodeHeight;
+    // Helper to decode position from single offset value
+    // Format: 0-50 = top edge, 50-100 = bottom edge
+    const decodePosition = (encodedOffset: number): { edge: 'top' | 'bottom', offset: number } => {
+        if (encodedOffset === 0) {
+            return { edge: 'bottom', offset: 50 }; // Default to bottom center
+        }
 
-        // Apply any custom offsets
-        const offsetX = edge?.sourceAngleOffset || 0; // Reuse angleOffset for X
-        const offsetY = edge?.targetAngleOffset || 0; // Reuse angleOffset for Y
+        const normalizedOffset = Math.max(0, Math.min(100, encodedOffset));
+
+        if (normalizedOffset < 50) {
+            // Top edge
+            return {
+                edge: 'top',
+                offset: (normalizedOffset / 50) * 100
+            };
+        } else {
+            // Bottom edge
+            return {
+                edge: 'bottom',
+                offset: ((normalizedOffset - 50) / 50) * 100
+            };
+        }
+    };
+
+    // Helper to encode position into single offset value
+    const encodePosition = (edge: 'top' | 'bottom', offset: number): number => {
+        const normalizedOffset = Math.max(0, Math.min(100, offset));
+
+        if (edge === 'top') {
+            return (normalizedOffset / 100) * 50;
+        } else {
+            return 50 + (normalizedOffset / 100) * 50;
+        }
+    };
+
+    // Position incoming handles (targets)
+    incomingFlows.forEach(flow => {
+        const edge = diagram.edges.find(e => e.id === flow.id);
+        const encodedOffset = edge?.targetAngleOffset || 0;
+        const { edge: edgePos, offset } = decodePosition(encodedOffset);
 
         handles.push({
             id: flow.id,
-            x: baseX + offsetX,
-            y: baseY + offsetY,
+            edge: edgePos,
+            offset,
             type: 'target'
         });
     });
 
-    // Position outgoing handles (sources) on right half
-    outgoingFlows.forEach((flow, index) => {
+    // Position outgoing handles (sources)
+    outgoingFlows.forEach(flow => {
         const edge = diagram.edges.find(e => e.id === flow.id);
-        const baseX = nodeWidth * 0.75; // Default to 75% from left
-        const baseY = ((index + 1) / (outgoingFlows.length + 1)) * nodeHeight;
-
-        // Apply any custom offsets
-        const offsetX = edge?.sourceAngleOffset || 0;
-        const offsetY = edge?.targetAngleOffset || 0;
+        const encodedOffset = edge?.sourceAngleOffset || 0;
+        const { edge: edgePos, offset } = decodePosition(encodedOffset);
 
         handles.push({
             id: flow.id,
-            x: baseX + offsetX,
-            y: baseY + offsetY,
+            edge: edgePos,
+            offset,
             type: 'source'
         });
     });
 
-    // Get handle position style
-    const getHandlePosition = (x: number, y: number) => {
-        // Clamp to node boundaries
-        const clampedX = Math.max(0, Math.min(nodeWidth, x));
-        const clampedY = Math.max(0, Math.min(nodeHeight, y));
+    // Get handle position style and React Flow Position
+    const getHandleStyleAndPosition = (edge: 'top' | 'bottom', offset: number) => {
+        const clampedOffset = Math.max(0, Math.min(100, offset));
 
-        return {
-            top: `${clampedY}px`,
-            left: `${clampedX}px`
-        };
+        let style: any = {};
+        let position: Position;
+
+        if (edge === 'top') {
+            style = { top: 0, left: `${clampedOffset}%` };
+            position = Position.Top;
+        } else {
+            style = { bottom: 0, left: `${clampedOffset}%` };
+            position = Position.Bottom;
+        }
+
+        return { style, position };
     };
 
-    // Calculate position from mouse relative to node
-    const getPositionFromMouse = (clientX: number, clientY: number): { x: number, y: number } => {
-        if (!nodeRef.current) return { x: 0, y: 0 };
+    // Calculate new edge and offset from mouse position
+    const getPositionFromMouse = (clientX: number, clientY: number): { edge: 'top' | 'bottom', offset: number } => {
+        if (!nodeRef.current) return { edge: 'bottom', offset: 50 };
 
         const rect = nodeRef.current.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
+        const relativeX = ((clientX - rect.left) / rect.width) * 100;
+        const relativeY = clientY - rect.top;
 
-        return { x, y };
+        // Determine which edge is closer
+        const distToTop = relativeY;
+        const distToBottom = rect.height - relativeY;
+
+        const edge: 'top' | 'bottom' = distToTop < distToBottom ? 'top' : 'bottom';
+        const offset = Math.max(0, Math.min(100, relativeX));
+
+        return { edge, offset };
     };
 
     // Start dragging a handle
@@ -102,34 +144,17 @@ export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) 
             const handle = handles.find(h => h.id === draggingHandleId);
             if (!handle) return;
 
-            // Calculate base position (original position without offset)
-            const currentOffsetX = handle.type === 'source'
-                ? (edge.sourceAngleOffset || 0)
-                : 0;
-            const currentOffsetY = handle.type === 'target'
-                ? (edge.targetAngleOffset || 0)
-                : 0;
-
-            const baseX = handle.x - currentOffsetX;
-            const baseY = handle.y - currentOffsetY;
-
             // Get new position from mouse
-            const newPos = getPositionFromMouse(e.clientX, e.clientY);
-            const newOffsetX = newPos.x - baseX;
-            const newOffsetY = newPos.y - baseY;
+            const { edge: newEdge, offset: newOffset } = getPositionFromMouse(e.clientX, e.clientY);
 
-            // Update the edge with new offsets
-            // We're reusing sourceAngleOffset/targetAngleOffset for X/Y coordinates
+            // Encode position as single value
+            const encodedOffset = encodePosition(newEdge, newOffset);
+
+            // Update only the appropriate field for this handle
             if (handle.type === 'source') {
-                updateEdge(draggingHandleId, {
-                    sourceAngleOffset: newOffsetX,
-                    targetAngleOffset: newOffsetY
-                });
+                updateEdge(draggingHandleId, { sourceAngleOffset: encodedOffset });
             } else {
-                updateEdge(draggingHandleId, {
-                    sourceAngleOffset: newOffsetX,
-                    targetAngleOffset: newOffsetY
-                });
+                updateEdge(draggingHandleId, { targetAngleOffset: encodedOffset });
             }
         };
 
@@ -152,34 +177,31 @@ export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) 
             className={`${styles.dataStoreNode} ${selected ? styles.selected : ''}`}
             style={{ width: `${nodeWidth}px`, height: `${nodeHeight}px` }}
         >
-            {/* Dynamic handles */}
-            {handles.map(handle => {
-                const pos = getHandlePosition(handle.x, handle.y);
+            {/* Dynamic handles - only on top/bottom edges */}
+            {showHandles && handles.map(handle => {
+                const { style, position } = getHandleStyleAndPosition(handle.edge, handle.offset);
                 const isDragging = draggingHandleId === handle.id;
                 return (
                     <Handle
                         key={handle.id}
                         type={handle.type}
-                        position={Position.Top}
+                        position={position}
                         id={handle.id}
                         onMouseDown={(e) => onHandleMouseDown(e, handle.id)}
                         style={{
-                            ...pos,
-                            width: isDragging ? 12 : 8,
-                            height: isDragging ? 12 : 8,
+                            ...style,
+                            width: isDragging ? 14 : 10,
+                            height: isDragging ? 14 : 10,
                             background: handle.type === 'source' ? '#34d399' : '#60a5fa',
                             border: '2px solid #fff',
-                            position: 'absolute',
-                            transform: 'translate(-50%, -50%)',
                             zIndex: 10,
                             cursor: selected ? 'grab' : 'default',
-                            transition: isDragging ? 'none' : 'width 0.2s, height 0.2s'
+                            transition: isDragging ? 'none' : 'all 0.2s'
                         }}
                     />
                 );
             })}
 
-            <div className={styles.storeId}>{data.storeCode}</div>
             <div className={styles.storeLabel}>{data.label}</div>
         </div>
     );

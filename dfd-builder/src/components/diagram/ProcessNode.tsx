@@ -1,8 +1,9 @@
 import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import { type ProcessNode as ProcessNodeType } from '../../core/types';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './ProcessNode.module.css';
+import { UIVisibilityContext } from '../../App';
 
 type QuadrantHandleConfig = {
     inCircleSection: { start: number; end: number };
@@ -30,6 +31,7 @@ const QUADRANT_CONFIGS: Record<string, QuadrantHandleConfig> = {
 
 export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     const { diagram, updateNode, updateEdge } = useDiagramStore();
+    const { showHandles } = useContext(UIVisibilityContext);
     const [draggingHandleId, setDraggingHandleId] = useState<string | null>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
 
@@ -260,7 +262,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             />
 
             {/* Dynamic handles */}
-            {handles.map(handle => {
+            {showHandles && handles.map(handle => {
                 const pos = getHandlePosition(handle.angle);
                 const isDragging = draggingHandleId === handle.id;
                 return (

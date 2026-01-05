@@ -1,11 +1,13 @@
 import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import { type EntityNode as EntityNodeType } from '../../core/types';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './EntityNode.module.css';
+import { UIVisibilityContext } from '../../App';
 
 export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
     const { diagram, updateNode, updateEdge } = useDiagramStore();
+    const { showHandles } = useContext(UIVisibilityContext);
     const [draggingHandleId, setDraggingHandleId] = useState<string | null>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
 
@@ -253,7 +255,7 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
             />
 
             {/* Dynamic draggable handles - can move anywhere along edges */}
-            {handles.map(handle => {
+            {showHandles && handles.map(handle => {
                 const { style, position } = getHandleStyleAndPosition(handle.side, handle.offset);
                 const isDragging = draggingHandleId === handle.id;
                 return (

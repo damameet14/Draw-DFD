@@ -44,6 +44,27 @@
     font-weight: 700;
 }
 
+.toggleButton {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: none;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 0.5rem;
+    backdrop-filter: blur(10px);
+}
+
+.toggleButton:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+}
+
 .mainContent {
     flex: 1;
     position: relative;
