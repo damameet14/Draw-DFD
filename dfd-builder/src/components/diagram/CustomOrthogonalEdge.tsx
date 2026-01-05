@@ -1,5 +1,5 @@
 import { type FC, useState, useEffect, useContext } from 'react';
-import { BaseEdge, EdgeLabelRenderer, type EdgeProps, useReactFlow } from 'reactflow';
+import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getSmoothStepPath } from 'reactflow';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import { RotateCw } from 'lucide-react';
 import { UIVisibilityContext } from '../../App';
@@ -11,6 +11,7 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
     targetX,
     targetY,
     sourcePosition,
+    targetPosition,
     label,
     markerEnd,
     style,
@@ -19,7 +20,7 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
     const { diagram, updateEdge } = useDiagramStore();
     const { showArrowButtons } = useContext(UIVisibilityContext);
     const [isLabelSelected, setIsLabelSelected] = useState(false);
-    const { getEdges } = useReactFlow();
+    // const { getEdges } = useReactFlow(); // Unused
 
     // Highlighting Style
     const edgeStyle = {
@@ -34,138 +35,151 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
 
     // Get the actual edge from the store
     const edge = diagram.edges.find(e => e.id === id);
-    const storedDirection = edge?.arrowDirection as 'horizontal-first' | 'vertical-first' | undefined;
+    const storedDirection = edge?.arrowDirection as 'horizontal-first' | 'vertical-first' | 'smart' | undefined;
     const labelOffset = edge?.labelOffset ?? 0.5;
 
-    let currentDirection: 'horizontal-first' | 'vertical-first' = 'horizontal-first';
+    let currentDirection: 'horizontal-first' | 'vertical-first' | 'smart' = 'horizontal-first';
 
-    // Determine path direction
-    if (storedDirection) {
-        currentDirection = storedDirection;
-    } else if (sourcePosition === 'bottom') {
-        currentDirection = 'vertical-first';
-    } else {
-        currentDirection = 'horizontal-first';
-    }
-
-    // Define path segments
-    let segments: Array<{ p1: { x: number, y: number }, p2: { x: number, y: number } }> = [];
-    if (currentDirection === 'horizontal-first') {
-        segments = [
-            { p1: { x: sourceX, y: sourceY }, p2: { x: targetX, y: sourceY } },
-            { p1: { x: targetX, y: sourceY }, p2: { x: targetX, y: targetY } }
-        ];
-    } else {
-        segments = [
-            { p1: { x: sourceX, y: sourceY }, p2: { x: sourceX, y: targetY } },
-            { p1: { x: sourceX, y: targetY }, p2: { x: targetX, y: targetY } }
-        ];
-    }
-
-    // Detect intersections with other edges
-    const intersections: Array<{ x: number, y: number, segmentIndex: number }> = [];
-    const allEdges = getEdges();
-
-    allEdges.forEach(otherEdge => {
-        if (otherEdge.id === id) return;
-
-        // Get other edge positions (simplified - assumes orthogonal edges)
-        const otherData = otherEdge.data as any;
-        if (!otherData) return;
-
-        // For simplicity, we'll check if this is a vertical line crossing a horizontal, or vice versa
-        // We need source and target positions for the other edge
-        // This is a limitation - we'd need access to actual edge coords
-        // For now, we'll use the data passed through
-    });
-
-    // Build path with wire jumps
+    // Define path and label position
     let path = '';
-    const bumpRadius = 8; // Radius of the semicircular bump
-
-    if (currentDirection === 'horizontal-first') {
-        // Horizontal segment first
-        const h = segments[0];
-        const crossings = intersections.filter(i => i.segmentIndex === 0);
-
-        if (crossings.length === 0 || Math.abs(h.p1.y - h.p2.y) > 1) {
-            // Vertical segment - add bumps
-            path = `M ${h.p1.x},${h.p1.y}`;
-
-            // Sort crossings by position
-            crossings.sort((a, b) => Math.abs(a.y - h.p1.y) - Math.abs(b.y - h.p1.y));
-
-            crossings.forEach(cross => {
-                // Draw to just before the crossing
-                path += ` L ${h.p1.x},${cross.y - bumpRadius}`;
-                // Add semicircular arc (bump to the right)
-                path += ` A ${bumpRadius},${bumpRadius} 0 0 1 ${h.p1.x},${cross.y + bumpRadius}`;
-            });
-            path += ` L ${h.p2.x},${h.p2.y}`;
-        } else {
-            // Horizontal segment
-            path = `M ${h.p1.x},${h.p1.y} L ${h.p2.x},${h.p2.y}`;
-        }
-
-        // Vertical segment
-        const v = segments[1];
-        path += ` L ${v.p2.x},${v.p2.y}`;
-    } else {
-        // Vertical segment first
-        const v = segments[0];
-        path = `M ${v.p1.x},${v.p1.y}`;
-
-        // Check if vertical - could have crossings
-        const crossings = intersections.filter(i => i.segmentIndex === 0);
-
-        if (crossings.length > 0) {
-            crossings.sort((a, b) => Math.abs(a.y - v.p1.y) - Math.abs(b.y - v.p1.y));
-
-            crossings.forEach(cross => {
-                path += ` L ${v.p1.x},${cross.y - bumpRadius}`;
-                path += ` A ${bumpRadius},${bumpRadius} 0 0 1 ${v.p1.x},${cross.y + bumpRadius}`;
-            });
-            path += ` L ${v.p2.x},${v.p2.y}`;
-        } else {
-            path += ` L ${v.p2.x},${v.p2.y}`;
-        }
-
-        // Horizontal segment
-        const h = segments[1];
-        path += ` L ${h.p2.x},${h.p2.y}`;
-    }
-
-    // Calculate label position (same as before)
     let labelX = 0;
     let labelY = 0;
 
-    if (currentDirection === 'horizontal-first') {
-        const horizontalLength = Math.abs(targetX - sourceX);
-        const verticalLength = Math.abs(targetY - sourceY);
-        const totalLength = horizontalLength + verticalLength;
-        const offsetDistance = totalLength * labelOffset;
+    // Check for Level 2
+    const isLevel2 = edge?.level === 2;
+    // Smart Routing is active for Level 2 if direction is not explicitly set to manual (H/V) or explicitly 'smart'
+    const useSmartRouting = isLevel2 && (!storedDirection || storedDirection === 'smart');
 
-        if (offsetDistance <= horizontalLength) {
-            labelX = sourceX + (targetX - sourceX) * (offsetDistance / horizontalLength);
-            labelY = sourceY;
+    if (useSmartRouting) {
+        // --- LEVEL 2: Step Edge Logic (Smart/Auto) ---
+        const [stepPath, centerX, centerY] = getSmoothStepPath({
+            sourceX, sourceY, sourcePosition,
+            targetX, targetY, targetPosition,
+            borderRadius: 0
+        });
+        path = stepPath;
+
+        // Calculate Label Position along the path
+        // Parse "M x y L x y ..."
+        const commands = stepPath.match(/[ML][^ML]*/g) || [];
+        const points: { x: number, y: number }[] = [];
+
+        commands.forEach(cmd => {
+            const coords = cmd.slice(1).trim().split(/[\s,]+/);
+            // Take x,y (last 2 numbers)
+            if (coords.length >= 2) {
+                const x = parseFloat(coords[coords.length - 2]);
+                const y = parseFloat(coords[coords.length - 1]);
+                if (!isNaN(x) && !isNaN(y)) {
+                    points.push({ x, y });
+                }
+            }
+        });
+
+        if (points.length >= 2) {
+            let totalLen = 0;
+            const pathSegments: { len: number, p1: any, p2: any }[] = [];
+
+            for (let i = 0; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                pathSegments.push({ len, p1, p2 });
+                totalLen += len;
+            }
+
+            let targetLen = totalLen * labelOffset;
+            let currentLen = 0;
+
+            // Default center fallback
+            labelX = centerX;
+            labelY = centerY;
+
+            for (const seg of pathSegments) {
+                if (currentLen + seg.len >= targetLen) {
+                    const innerLen = targetLen - currentLen;
+                    const ratio = seg.len > 0 ? innerLen / seg.len : 0;
+                    labelX = seg.p1.x + (seg.p2.x - seg.p1.x) * ratio;
+                    labelY = seg.p1.y + (seg.p2.y - seg.p1.y) * ratio;
+                    break;
+                }
+                currentLen += seg.len;
+            }
         } else {
-            labelX = targetX;
-            const verticalOffset = offsetDistance - horizontalLength;
-            labelY = sourceY + (targetY - sourceY) * (verticalOffset / verticalLength);
+            labelX = centerX;
+            labelY = centerY;
         }
-    } else {
-        const verticalLength = Math.abs(targetY - sourceY);
-        const horizontalLength = Math.abs(targetX - sourceX);
-        const totalLength = verticalLength + horizontalLength;
-        const offsetDistance = totalLength * labelOffset;
 
-        if (offsetDistance <= verticalLength) {
-            labelX = sourceX;
-            labelY = sourceY + (targetY - sourceY) * (offsetDistance / verticalLength);
+    } else {
+        // --- Manual L-Shape Logic (Level 0/1 OR Manual Override for Level 2) ---
+
+        // Determine path direction
+        if (storedDirection && storedDirection !== 'smart') {
+            currentDirection = storedDirection as 'horizontal-first' | 'vertical-first';
+        } else if (sourcePosition === 'bottom') {
+            currentDirection = 'vertical-first';
         } else {
-            const horizontalOffset = offsetDistance - verticalLength;
-            labelX = sourceX + (targetX - sourceX) * (horizontalOffset / horizontalLength);
-            labelY = targetY;
+            currentDirection = 'horizontal-first';
+        }
+
+        // Define path segments
+        let segments: Array<{ p1: { x: number, y: number }, p2: { x: number, y: number } }> = [];
+        if (currentDirection === 'horizontal-first') {
+            segments = [
+                { p1: { x: sourceX, y: sourceY }, p2: { x: targetX, y: sourceY } },
+                { p1: { x: targetX, y: sourceY }, p2: { x: targetX, y: targetY } }
+            ];
+        } else {
+            segments = [
+                { p1: { x: sourceX, y: sourceY }, p2: { x: sourceX, y: targetY } },
+                { p1: { x: sourceX, y: targetY }, p2: { x: targetX, y: targetY } }
+            ];
+        }
+
+        // Build path (Simple L-Shape)
+        if (currentDirection === 'horizontal-first') {
+            // Horizontal segment first
+            const h = segments[0];
+            const v = segments[1];
+            path = `M ${h.p1.x},${h.p1.y} L ${h.p2.x},${h.p2.y} L ${v.p2.x},${v.p2.y}`;
+        } else {
+            // Vertical segment first
+            const v = segments[0];
+            const h = segments[1];
+            path = `M ${v.p1.x},${v.p1.y} L ${v.p2.x},${v.p2.y} L ${h.p2.x},${h.p2.y}`;
+        }
+
+        // Calculate label position for Manual
+        if (currentDirection === 'horizontal-first') {
+            const horizontalLength = Math.abs(targetX - sourceX);
+            const verticalLength = Math.abs(targetY - sourceY);
+            const totalLength = horizontalLength + verticalLength;
+            const offsetDistance = totalLength * labelOffset;
+
+            if (offsetDistance <= horizontalLength) {
+                labelX = sourceX + (targetX - sourceX) * (offsetDistance / horizontalLength);
+                labelY = sourceY;
+            } else {
+                labelX = targetX;
+                const verticalOffset = offsetDistance - horizontalLength;
+                labelY = sourceY + (targetY - sourceY) * (verticalOffset / verticalLength);
+            }
+        } else {
+            const verticalLength = Math.abs(targetY - sourceY);
+            const horizontalLength = Math.abs(targetX - sourceX);
+            const totalLength = verticalLength + horizontalLength;
+            const offsetDistance = totalLength * labelOffset;
+
+            if (offsetDistance <= verticalLength) {
+                labelX = sourceX;
+                labelY = sourceY + (targetY - sourceY) * (offsetDistance / verticalLength);
+            } else {
+                const horizontalOffset = offsetDistance - verticalLength;
+                labelX = sourceX + (targetX - sourceX) * (horizontalOffset / horizontalLength);
+                labelY = targetY;
+            }
         }
     }
 
@@ -174,8 +188,22 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
         e.stopPropagation();
         e.preventDefault();
 
-        const newDirection = currentDirection === 'horizontal-first' ? 'vertical-first' : 'horizontal-first';
-        updateEdge(id, { arrowDirection: newDirection });
+        // Level 2: Smart -> Horizontal -> Vertical -> Smart
+        if (isLevel2) {
+            let newDirection: 'horizontal-first' | 'vertical-first' | 'smart' = 'smart';
+            if (!storedDirection || storedDirection === 'smart') {
+                newDirection = 'horizontal-first';
+            } else if (storedDirection === 'horizontal-first') {
+                newDirection = 'vertical-first';
+            } else {
+                newDirection = 'smart';
+            }
+            updateEdge(id, { arrowDirection: newDirection });
+        } else {
+            // Level 0/1: Horizontal <-> Vertical
+            const newDirection = currentDirection === 'horizontal-first' ? 'vertical-first' : 'horizontal-first';
+            updateEdge(id, { arrowDirection: newDirection });
+        }
     };
 
     // Label click handler
@@ -216,7 +244,7 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
         };
     }, [isLabelSelected, labelOffset, id, updateEdge]);
 
-    // Button visibility: Global toggle OR Selected
+    // Button visibility: Global toggle OR Selected (Always allow, control internal logic)
     const isButtonVisible = showArrowButtons || selected;
 
     return (
