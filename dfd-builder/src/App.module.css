@@ -25,23 +25,25 @@
     font-size: 0.875rem;
     font-weight: 600;
     border: none;
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.25);
+    color: rgba(255, 255, 255, 0.9);
     cursor: pointer;
     transition: all 0.2s;
     border-radius: 0.5rem 0.5rem 0 0;
     backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .tab:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.35);
+    color: white;
 }
 
 .tabActive {
     background: white;
     color: #667eea;
     font-weight: 700;
+    box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
 .toggleButton {
@@ -50,19 +52,21 @@
     gap: 6px;
     padding: 0.5rem 1rem;
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: 600;
     border: none;
-    background: rgba(255, 255, 255, 0.2);
-    color: white;
+    background: white;
+    color: #4b5563;
     cursor: pointer;
     transition: all 0.2s;
     border-radius: 0.5rem;
-    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .toggleButton:hover {
-    background: rgba(255, 255, 255, 0.3);
-    transform: scale(1.05);
+    background: #f3f4f6;
+    color: #1f2937;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .mainContent {

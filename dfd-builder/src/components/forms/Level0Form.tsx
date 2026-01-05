@@ -29,8 +29,8 @@ export const Level0Form = () => {
     }, [diagram.nodes, addNode]);
 
     const mainProcess = diagram.nodes.find(n => n.type === 'process' && (n as ProcessNode).processNumber === '0.0') as ProcessNode | undefined;
-    const entities = diagram.nodes.filter(n => n.type === 'entity');
-    const flows = diagram.edges;
+    const entities = diagram.nodes.filter(n => n.type === 'entity' && n.level === 0);
+    const flows = diagram.edges.filter(e => e.level === 0);
 
     const handleSystemNameChange = (name: string) => {
         if (mainProcess) {
