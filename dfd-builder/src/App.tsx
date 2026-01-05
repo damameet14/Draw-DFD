@@ -2,6 +2,7 @@ import { useState, createContext } from 'react';
 import { DFDCanvas } from './components/diagram/DFDCanvas';
 import { Level0Form } from './components/forms/Level0Form';
 import { Level1Form } from './components/forms/Level1Form';
+import { Level2Form } from './components/forms/Level2Form';
 import styles from './App.module.css';
 import { type DFDLevel } from './core/types';
 import { Eye, EyeOff } from 'lucide-react';
@@ -34,6 +35,12 @@ function App() {
           >
             Level 1
           </button>
+          <button
+            className={`${styles.tab} ${currentLevel === 2 ? styles.tabActive : ''}`}
+            onClick={() => setCurrentLevel(2)}
+          >
+            Level 2
+          </button>
 
           {/* Visibility toggles */}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
@@ -57,7 +64,7 @@ function App() {
         </div>
 
         {/* Conditional Form Rendering */}
-        {currentLevel === 0 ? <Level0Form /> : <Level1Form />}
+        {currentLevel === 0 ? <Level0Form /> : currentLevel === 1 ? <Level1Form /> : <Level2Form />}
 
         <main className={styles.mainContent}>
           <DFDCanvas currentLevel={currentLevel} />

@@ -1,6 +1,6 @@
 export type DFDLevel = 0 | 1 | 2;
 
-export type DFDNodeType = 'entity' | 'process' | 'datastore';
+export type DFDNodeType = 'entity' | 'process' | 'datastore' | 'process_ref';
 
 // Base Node Interface
 export interface DFDNodeBase {
@@ -9,6 +9,7 @@ export interface DFDNodeBase {
     label: string;
     level: DFDLevel;
     position: { x: number; y: number }; // For drag & drop state
+    parentProcessId?: string; // For Level 2, associating with a parent process
 }
 
 // Concrete Node Types
@@ -23,7 +24,6 @@ export interface ProcessNode extends DFDNodeBase {
     type: 'process';
     processNumber: string; // "0.0", "1.0", "3.2"
     diameter?: number; // Optional custom diameter (default: 200px)
-    parentProcessId?: string | null; // For Level 2, links to parent Level 1 process
 }
 
 export interface DataStoreNode extends DFDNodeBase {
@@ -31,7 +31,13 @@ export interface DataStoreNode extends DFDNodeBase {
     storeCode: string; // "D1", "D2"
 }
 
-export type DFDNode = EntityNode | ProcessNode | DataStoreNode;
+export interface ExternalProcessNode extends DFDNodeBase {
+    type: 'process_ref';
+    width?: number;
+    height?: number;
+}
+
+export type DFDNode = EntityNode | ProcessNode | DataStoreNode | ExternalProcessNode;
 
 // Edge Interface
 export interface DFDEdge {

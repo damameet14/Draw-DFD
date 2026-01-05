@@ -202,7 +202,10 @@ export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) 
                 );
             })}
 
-            <div className={styles.storeLabel}>{data.label}</div>
+            <div className={styles.storeLabel}>
+                {data.storeCode ? <span style={{ marginRight: '5px', fontWeight: 'bold' }}>{data.storeCode}</span> : null}
+                {data.label}
+            </div>
         </div>
     );
 };

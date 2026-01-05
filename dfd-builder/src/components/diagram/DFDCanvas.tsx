@@ -23,6 +23,7 @@ const nodeTypes: NodeTypes = {
     process: ProcessNode,
     entity: EntityNode,
     datastore: DataStoreNode,
+    process_ref: EntityNode, // Reusing EntityNode for external process refs for now
 };
 
 const edgeTypes: EdgeTypes = {
@@ -107,7 +108,7 @@ export const DFDCanvas = ({ currentLevel }: DFDCanvasProps) => {
         <div className={styles.canvasContainer}>
             <div className={styles.diagramHeader}>
                 <h1 className={styles.diagramTitle}>
-                    {currentLevel === 0 ? 'Context Level DFD' : 'Level 1 DFD'}
+                    {currentLevel === 0 ? 'Context Level DFD' : currentLevel === 1 ? 'Level 1 DFD' : 'Level 2 DFD'}
                 </h1>
             </div>
             <div className={styles.canvasWrapper}>

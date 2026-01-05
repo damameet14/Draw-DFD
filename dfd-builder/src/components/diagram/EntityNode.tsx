@@ -88,7 +88,8 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
 
     // Determine entity's position/quadrant (based on ProcessNode's quadrant assignment)
     const getEntityPosition = (): 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' => {
-        const entityNodes = diagram.nodes.filter(n => n.type === 'entity');
+        // Treat both entity and process_ref as "participants" for quadrant logic
+        const entityNodes = diagram.nodes.filter(n => n.type === 'entity' || n.type === 'process_ref');
         const entityIndex = entityNodes.findIndex(n => n.id === data.id);
         const quadrantOrder = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
         return quadrantOrder[entityIndex % 4] as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';

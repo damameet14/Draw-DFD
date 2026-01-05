@@ -54,8 +54,8 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         outgoing: [] as string[]
     };
 
-    // Get all entity nodes
-    const entityNodes = diagram.nodes.filter(n => n.type === 'entity');
+    // Get all entity nodes (and process_refs for Level 2)
+    const entityNodes = diagram.nodes.filter(n => n.type === 'entity' || n.type === 'process_ref');
     const quadrantOrder = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
     // Initialize entity flows map
@@ -72,7 +72,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     // Categorize flows by source/target type
     incomingFlows.forEach(flow => {
         const sourceNode = diagram.nodes.find(n => n.id === flow.sourceNodeId);
-        if (sourceNode?.type === 'entity') {
+        if (sourceNode?.type === 'entity' || sourceNode?.type === 'process_ref') {
             const entityData = entityFlows.get(flow.sourceNodeId);
             if (entityData) {
                 entityData.incoming.push(flow.id);
@@ -84,7 +84,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
 
     outgoingFlows.forEach(flow => {
         const targetNode = diagram.nodes.find(n => n.id === flow.targetNodeId);
-        if (targetNode?.type === 'entity') {
+        if (targetNode?.type === 'entity' || targetNode?.type === 'process_ref') {
             const entityData = entityFlows.get(flow.targetNodeId);
             if (entityData) {
                 entityData.outgoing.push(flow.id);
