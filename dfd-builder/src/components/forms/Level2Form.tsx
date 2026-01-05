@@ -490,36 +490,52 @@ const SubProcessAccordion = ({
                         </ul>
                     </div>
 
-                    {/* Datastore Interactions */}
+
+                    {/* Datastore Inputs (Reading from DS) */}
                     <div className={styles.flowSection}>
-                        <h4 className={styles.flowSectionTitle}>Data Store Interactions</h4>
-                        <div className={styles.dsForm}>
+                        <h4 className={styles.flowSectionTitle}>Data Store Inputs (Read)</h4>
+                        <div className={styles.flowForm}>
                             <select value={inputState.dsId} onChange={e => setInputState({ ...inputState, dsId: e.target.value })} className={styles.flowSelect}>
                                 <option value="">Select Data Store...</option>
                                 {datastores.map(ds => <option key={ds.id} value={ds.id}>{ds.storeCode} {ds.label}</option>)}
                             </select>
-                            <input type="text" placeholder="IN Label" value={inputState.dsIn} onChange={e => setInputState({ ...inputState, dsIn: e.target.value })} className={styles.flowInput} />
-                            <input type="text" placeholder="OUT Label" value={inputState.dsOut} onChange={e => setInputState({ ...inputState, dsOut: e.target.value })} className={styles.flowInput} />
+                            <input type="text" placeholder="Label" value={inputState.dsIn} onChange={e => setInputState({ ...inputState, dsIn: e.target.value })} className={styles.flowInput} />
                             <button onClick={() => {
-                                onAddDsInteraction(inputState.dsId, inputState.dsIn, inputState.dsOut);
-                                setInputState({ ...inputState, dsId: '', dsIn: '', dsOut: '' });
+                                onAddDsInteraction(inputState.dsId, inputState.dsIn, ""); // Only IN label
+                                setInputState({ ...inputState, dsId: '', dsIn: '' });
                             }} className={styles.addFlowButton}><Plus size={16} /></button>
                         </div>
                         <ul className={styles.flowList}>
-                            {process.datastoreInteractions.map(i => {
-                                const ds = datastores.find(d => d.id === i.datastoreId);
-                                let flowText = '';
-                                if (i.inLabel && i.outLabel) flowText = `IN: "${i.inLabel}" / OUT: "${i.outLabel}"`;
-                                else if (i.inLabel) flowText = `IN: "${i.inLabel}"`;
-                                else if (i.outLabel) flowText = `OUT: "${i.outLabel}"`;
+                            {process.datastoreInteractions.filter(i => !!i.inLabel).map(i => (
+                                <li key={`${i.id}-in`} className={styles.flowItem}>
+                                    <span>← {datastores.find(d => d.id === i.datastoreId)?.storeCode}: {i.inLabel}</span>
+                                    <button onClick={() => onDeleteDsInteraction(i.id)} className={styles.deleteButton}><Trash2 size={14} /></button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
 
-                                return (
-                                    <li key={i.id} className={styles.flowItem}>
-                                        <span>⇄ {ds?.storeCode}: {flowText}</span>
-                                        <button onClick={() => onDeleteDsInteraction(i.id)} className={styles.deleteButton}><Trash2 size={14} /></button>
-                                    </li>
-                                );
-                            })}
+                    {/* Datastore Outputs (Writing to DS) */}
+                    <div className={styles.flowSection}>
+                        <h4 className={styles.flowSectionTitle}>Data Store Outputs (Write)</h4>
+                        <div className={styles.flowForm}>
+                            <select value={inputState.dsId} onChange={e => setInputState({ ...inputState, dsId: e.target.value })} className={styles.flowSelect}>
+                                <option value="">Select Data Store...</option>
+                                {datastores.map(ds => <option key={ds.id} value={ds.id}>{ds.storeCode} {ds.label}</option>)}
+                            </select>
+                            <input type="text" placeholder="Label" value={inputState.dsOut} onChange={e => setInputState({ ...inputState, dsOut: e.target.value })} className={styles.flowInput} />
+                            <button onClick={() => {
+                                onAddDsInteraction(inputState.dsId, "", inputState.dsOut); // Only OUT label
+                                setInputState({ ...inputState, dsId: '', dsOut: '' });
+                            }} className={styles.addFlowButton}><Plus size={16} /></button>
+                        </div>
+                        <ul className={styles.flowList}>
+                            {process.datastoreInteractions.filter(i => !!i.outLabel).map(i => (
+                                <li key={`${i.id}-out`} className={styles.flowItem}>
+                                    <span>→ {datastores.find(d => d.id === i.datastoreId)?.storeCode}: {i.outLabel}</span>
+                                    <button onClick={() => onDeleteDsInteraction(i.id)} className={styles.deleteButton}><Trash2 size={14} /></button>
+                                </li>
+                            ))}
                         </ul>
                     </div>
 

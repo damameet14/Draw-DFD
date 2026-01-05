@@ -61,31 +61,62 @@ export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) 
         }
     };
 
-    // Position incoming handles (targets)
-    incomingFlows.forEach(flow => {
-        const edge = diagram.edges.find(e => e.id === flow.id);
-        const encodedOffset = edge?.targetAngleOffset || 0;
-        const { edge: edgePos, offset } = decodePosition(encodedOffset);
+    // Helper: Distribute percentages evenly
+    const distributeOffsets = (count: number): number[] => {
+        if (count === 0) return [];
+        const step = 100 / (count + 1);
+        return Array.from({ length: count }, (_, i) => step * (i + 1));
+    };
 
-        handles.push({
-            id: flow.id,
-            edge: edgePos,
-            offset,
-            type: 'target'
-        });
-    });
-
-    // Position outgoing handles (sources)
-    outgoingFlows.forEach(flow => {
+    // Position outgoing handles (sources, DS -> Process) -> Default TOP
+    const topOffsets = distributeOffsets(outgoingFlows.length);
+    outgoingFlows.forEach((flow, index) => {
         const edge = diagram.edges.find(e => e.id === flow.id);
-        const encodedOffset = edge?.sourceAngleOffset || 0;
-        const { edge: edgePos, offset } = decodePosition(encodedOffset);
+        const storedEncoded = edge?.sourceAngleOffset;
+
+        let edgePos: 'top' | 'bottom';
+        let offset: number;
+
+        if (storedEncoded !== undefined && storedEncoded !== 0) {
+            const decoded = decodePosition(storedEncoded);
+            edgePos = decoded.edge;
+            offset = decoded.offset;
+        } else {
+            edgePos = 'top'; // Default
+            offset = topOffsets[index];
+        }
 
         handles.push({
             id: flow.id,
             edge: edgePos,
             offset,
             type: 'source'
+        });
+    });
+
+    // Position incoming handles (targets, Process -> DS) -> Default BOTTOM
+    const bottomOffsets = distributeOffsets(incomingFlows.length);
+    incomingFlows.forEach((flow, index) => {
+        const edge = diagram.edges.find(e => e.id === flow.id);
+        const storedEncoded = edge?.targetAngleOffset;
+
+        let edgePos: 'top' | 'bottom';
+        let offset: number;
+
+        if (storedEncoded !== undefined && storedEncoded !== 0) {
+            const decoded = decodePosition(storedEncoded);
+            edgePos = decoded.edge;
+            offset = decoded.offset;
+        } else {
+            edgePos = 'bottom'; // Default
+            offset = bottomOffsets[index];
+        }
+
+        handles.push({
+            id: flow.id,
+            edge: edgePos,
+            offset,
+            type: 'target'
         });
     });
 

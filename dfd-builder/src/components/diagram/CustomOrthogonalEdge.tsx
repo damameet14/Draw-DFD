@@ -13,12 +13,24 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
     sourcePosition,
     label,
     markerEnd,
-    style
+    style,
+    selected // Capture selected prop
 }) => {
     const { diagram, updateEdge } = useDiagramStore();
     const { showArrowButtons } = useContext(UIVisibilityContext);
     const [isLabelSelected, setIsLabelSelected] = useState(false);
     const { getEdges } = useReactFlow();
+
+    // Highlighting Style
+    const edgeStyle = {
+        ...style,
+        stroke: selected ? '#3b82f6' : (style?.stroke || '#1e293b'),
+        strokeWidth: selected ? 3 : (style?.strokeWidth || 2),
+        filter: selected ? 'drop-shadow(0 0 2px rgba(59, 130, 246, 0.5))' : 'none'
+    };
+
+    // Marker Style for selection - modifying markerEnd is complex inside the component as it expects an ID string
+    // We'll stick to highlighting the path for now.
 
     // Get the actual edge from the store
     const edge = diagram.edges.find(e => e.id === id);
@@ -204,13 +216,16 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
         };
     }, [isLabelSelected, labelOffset, id, updateEdge]);
 
+    // Button visibility: Global toggle OR Selected
+    const isButtonVisible = showArrowButtons || selected;
+
     return (
         <>
             <BaseEdge
                 id={id}
                 path={path}
                 markerEnd={markerEnd}
-                style={style}
+                style={edgeStyle}
             />
             <EdgeLabelRenderer>
                 <div
@@ -221,11 +236,12 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: '4px',
-                        pointerEvents: 'all'
+                        pointerEvents: 'all',
+                        zIndex: 1001 // Ensure it's on top
                     }}
                     className="nodrag nopan"
                 >
-                    {showArrowButtons && (
+                    {isButtonVisible && (
                         <button
                             onClick={handleToggleDirection}
                             onMouseDown={(e) => e.stopPropagation()}

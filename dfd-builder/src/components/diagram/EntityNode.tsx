@@ -86,48 +86,26 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         return encoded;
     };
 
-    // Determine entity's position/quadrant (based on ProcessNode's quadrant assignment)
-    const getEntityPosition = (): 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' => {
-        // Treat both entity and process_ref as "participants" for quadrant logic
-        const entityNodes = diagram.nodes.filter(n => n.type === 'entity' || n.type === 'process_ref');
-        const entityIndex = entityNodes.findIndex(n => n.id === data.id);
-        const quadrantOrder = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-        return quadrantOrder[entityIndex % 4] as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-    };
 
-    // Get default handle side based on entity position
-    const getDefaultHandleSide = (isIncoming: boolean): 'top' | 'right' | 'bottom' | 'left' => {
-        const position = getEntityPosition();
 
-        if (isIncoming) {
-            // IN handles (Process -> Entity) - User's "OUT" column
-            switch (position) {
-                case 'top-left': return 'bottom';
-                case 'top-right': return 'bottom';
-                case 'bottom-left': return 'top';
-                case 'bottom-right': return 'top';
-            }
-        } else {
-            // OUT handles (Entity -> Process) - User's "IN" column
-            switch (position) {
-                case 'top-left': return 'right';
-                case 'top-right': return 'left';
-                case 'bottom-left': return 'right';
-                case 'bottom-right': return 'right';
-            }
-        }
-        // Fallback
-        return 'right';
-    };
-
-    // Generate handles for incoming flows (entity as target)
+    // Generate handles for incoming flows (entity as target, process -> entity) -> Default BOTTOM
     incomingFlows.forEach(flow => {
-        const defaultSide = getDefaultHandleSide(true);
-        const defaultOffset = 50; // Center of the side
-        const defaultEncoded = encodePosition(defaultSide, defaultOffset);
+        const defaultSide = 'bottom';
+        const defaultOffset = 50;
 
-        const storedOffset = flow.targetAngleOffset || defaultEncoded;
-        const { side, offset } = decodePosition(storedOffset);
+        // If explicitly stored, use it. Otherwise use default.
+        const storedOffset = flow.targetAngleOffset;
+        let side: 'top' | 'right' | 'bottom' | 'left';
+        let offset: number;
+
+        if (storedOffset !== undefined && storedOffset !== 0) {
+            const decoded = decodePosition(storedOffset);
+            side = decoded.side;
+            offset = decoded.offset;
+        } else {
+            side = defaultSide;
+            offset = defaultOffset;
+        }
 
         handles.push({
             id: flow.id,
@@ -137,14 +115,25 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         });
     });
 
-    // Generate handles for outgoing flows (entity as source)
+    // Generate handles for outgoing flows (entity as source, entity -> process) -> Default RIGHT
     outgoingFlows.forEach(flow => {
-        const defaultSide = getDefaultHandleSide(false);
-        const defaultOffset = 50; // Center of the side
-        const defaultEncoded = encodePosition(defaultSide, defaultOffset);
+        const defaultSide = 'right';
+        const defaultOffset = 50;
+        // Default encoded not used if we check storedOffset directly
 
-        const storedOffset = flow.sourceAngleOffset || defaultEncoded;
-        const { side, offset } = decodePosition(storedOffset);
+        const storedOffset = flow.sourceAngleOffset;
+        let side: 'top' | 'right' | 'bottom' | 'left';
+        let offset: number;
+
+        if (storedOffset !== undefined && storedOffset !== 0) {
+            const decoded = decodePosition(storedOffset);
+            side = decoded.side;
+            offset = decoded.offset;
+        } else {
+            side = defaultSide;
+            offset = defaultOffset;
+        }
+
         handles.push({
             id: flow.id,
             side,

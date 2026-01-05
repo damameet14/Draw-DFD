@@ -5,29 +5,7 @@ import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './ProcessNode.module.css';
 import { UIVisibilityContext } from '../../App';
 
-type QuadrantHandleConfig = {
-    inCircleSection: { start: number; end: number };
-    outCircleSection: { start: number; end: number };
-};
 
-const QUADRANT_CONFIGS: Record<string, QuadrantHandleConfig> = {
-    'top-left': {
-        inCircleSection: { start: 358, end: 328 },   // IN: Top of circle (from top-left entity)
-        outCircleSection: { start: 315, end: 285 }  // OUT: Bottom-left of circle (to top-left entity)
-    },
-    'top-right': {
-        inCircleSection: { start: 2, end: 40 },    // IN: Top-right of circle (from top-right entity)
-        outCircleSection: { start: 45, end: 88 }  // OUT: Bottom-right of circle (to top-right entity)
-    },
-    'bottom-left': {
-        inCircleSection: { start: 93, end: 125 },  // IN: Left of circle (from bottom-left entity)
-        outCircleSection: { start: 130, end: 165 }  // OUT: Bottom of circle (to bottom-left entity)
-    },
-    'bottom-right': {
-        inCircleSection: { start: 182, end: 215 },   // IN: Top-right of circle (from bottom-right entity) - wraps 0°
-        outCircleSection: { start: 219, end: 240 }  // OUT: Bottom of circle (to bottom-right entity)
-    }
-};
 
 export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     const { diagram, updateNode, updateEdge } = useDiagramStore();
@@ -101,67 +79,119 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         type: 'source' | 'target'
     }> = [];
 
-    // Entity flow handles (LEFT SIDE: 180-360 degrees)
+    // Helper: Distribute angles evenly within a range
+    const distributeAngles = (startAngle: number, endAngle: number, count: number): number[] => {
+        if (count === 0) return [];
+        // If full circle (360), step is 360/count. If arc, step is (end-start)/(count+1).
+        // Since we are doing left/right separation, we are using arcs (< 180 degrees generally to leave gaps at top/bottom).
+        // Let's use a safe margin.
+
+        // Left side: typically 135 to 225? Or 90 to 270?
+        // Let's define:
+        // Left Hemisphere (Entities): 90° (Bottom) -> 180° (Left) -> 270° (Top) in ReactFlow coords?
+        // Wait, ReactFlow/CSS angles: 0=Right, 90=Bottom, 180=Left, 270=Top.
+        // So Left side is 90 to 270.
+        // Right side is 270 → 360/0 → 90.
+
+        // We want to avoid 90 and 270 (Top/Bottom poles) to prevent overlap between left/right groups at the poles.
+        // So Left Range: 100° to 260°.
+        // Right Range: 280° to 440° (i.e. 80°).
+
+        const availableArc = endAngle - startAngle;
+        const step = availableArc / (count + 1);
+        return Array.from({ length: count }, (_, i) => startAngle + step * (i + 1));
+    };
+
+    // Collect all unique flows
+    const leftFlows: { id: string, type: 'source' | 'target', edgeOffset: number }[] = [];
+    const rightFlows: { id: string, type: 'source' | 'target', edgeOffset: number }[] = [];
+
+    // Process Entity Flows (LEFT)
     entityFlows.forEach((entityData) => {
-        const config = QUADRANT_CONFIGS[entityData.quadrant];
-
-        // IN handles (entity → process)
-        const inCount = entityData.incoming.length;
-        if (inCount > 0) {
-            const sectionSize = config.inCircleSection.end - config.inCircleSection.start;
-            entityData.incoming.forEach((flowId, index) => {
-                const edge = diagram.edges.find(e => e.id === flowId);
-                const baseAngle = config.inCircleSection.start +
-                    (sectionSize * (index + 1)) / (inCount + 1);
-                const angle = baseAngle + (edge?.targetAngleOffset || 0);
-                handles.push({ id: flowId, angle, type: 'target' });
-            });
-        }
-
-        // OUT handles (process → entity)
-        const outCount = entityData.outgoing.length;
-        if (outCount > 0) {
-            const sectionSize = config.outCircleSection.end - config.outCircleSection.start;
-            entityData.outgoing.forEach((flowId, index) => {
-                const edge = diagram.edges.find(e => e.id === flowId);
-                const baseAngle = config.outCircleSection.start +
-                    (sectionSize * (index + 1)) / (outCount + 1);
-                const angle = baseAngle + (edge?.sourceAngleOffset || 0);
-                handles.push({ id: flowId, angle, type: 'source' });
-            });
-        }
+        // IN (Entity -> Process): Target Handle
+        entityData.incoming.forEach(id => {
+            const edge = diagram.edges.find(e => e.id === id);
+            leftFlows.push({ id, type: 'target', edgeOffset: edge?.targetAngleOffset || 0 });
+        });
+        // OUT (Process -> Entity): Source Handle
+        entityData.outgoing.forEach(id => {
+            const edge = diagram.edges.find(e => e.id === id);
+            leftFlows.push({ id, type: 'source', edgeOffset: edge?.sourceAngleOffset || 0 });
+        });
     });
 
-    // Datastore flow handles (RIGHT SIDE: 0-180 degrees)
-    // IN handles (datastore → process) - bottom-right area (90-180)
-    const dsInCount = datastoreFlows.incoming.length;
-    if (dsInCount > 0) {
-        const startAngle = 90;   // Right side
-        const endAngle = 180;    // Bottom-right
-        const sectionSize = endAngle - startAngle;
+    // Process Datastore Flows (RIGHT)
+    datastoreFlows.incoming.forEach(id => { // DS -> Process (Target)
+        const edge = diagram.edges.find(e => e.id === id);
+        rightFlows.push({ id, type: 'target', edgeOffset: edge?.targetAngleOffset || 0 });
+    });
+    datastoreFlows.outgoing.forEach(id => { // Process -> DS (Source)
+        const edge = diagram.edges.find(e => e.id === id);
+        rightFlows.push({ id, type: 'source', edgeOffset: edge?.sourceAngleOffset || 0 });
+    });
 
-        datastoreFlows.incoming.forEach((flowId, index) => {
-            const edge = diagram.edges.find(e => e.id === flowId);
-            const baseAngle = startAngle + (sectionSize * (index + 1)) / (dsInCount + 1);
-            const angle = baseAngle + (edge?.targetAngleOffset || 0);
-            handles.push({ id: flowId, angle, type: 'target' });
+    // Calculate Angles for Left Side (Entities) - Grouped by Entity
+    // User requested 180-360 degrees.
+    // Grouping: "position ins and outs of entities close to each other just 5 degree distant"
+
+    const entityIds = Array.from(entityFlows.keys());
+    if (entityIds.length > 0) {
+        // Distribute the *centers* of the entities
+        const entityCenters = distributeAngles(190, 350, entityIds.length);
+
+        entityIds.forEach((entityId, index) => {
+            const centerAngle = entityCenters[index];
+            const data = entityFlows.get(entityId)!;
+
+            // Collect all flows for this entity
+            // Note: We need to handle INs and OUTs.
+            // Let's combine them. Order matters? Maybe INs top, OUTs bottom? or arbitrary?
+            // User didn't specify order, just "close to each other".
+            // Let's put Incoming (Entity->Process) then Outgoing (Process->Entity).
+            const entFlows: { id: string, type: 'source' | 'target', edgeOffset: number }[] = [];
+
+            data.incoming.forEach(id => {
+                const edge = diagram.edges.find(e => e.id === id);
+                entFlows.push({ id, type: 'target', edgeOffset: edge?.targetAngleOffset || 0 });
+            });
+            data.outgoing.forEach(id => {
+                const edge = diagram.edges.find(e => e.id === id);
+                entFlows.push({ id, type: 'source', edgeOffset: edge?.sourceAngleOffset || 0 });
+            });
+
+            // Position flows around center with 5 degree spacing
+            const spacing = 5;
+            const flowCount = entFlows.length;
+            const startOffset = -((flowCount - 1) * spacing) / 2;
+
+            entFlows.forEach((flow, flowIdx) => {
+                const angleOffset = startOffset + (flowIdx * spacing);
+                // Base angle is center + spacing offset
+                const baseAngle = centerAngle + angleOffset;
+
+                // Add manual drag offset
+                const finalAngle = baseAngle + flow.edgeOffset;
+
+                handles.push({ id: flow.id, angle: finalAngle, type: flow.type });
+            });
         });
     }
 
-    // OUT handles (process → datastore) - top-right area (0-90)
-    const dsOutCount = datastoreFlows.outgoing.length;
-    if (dsOutCount > 0) {
-        const startAngle = 0;    // Top
-        const endAngle = 90;     // Right side
-        const sectionSize = endAngle - startAngle;
+    // Previous flat distribution logic replaced by above.
+    // (Removed leftFlows usage for calculation, though we constructed it earlier. We can leave the construction or unused vars if it simplifies)
+    // To be clean, I should comment out or remove the 'leftFlows' construction if it's no longer used, but the prompt replaces lines 133-141.
+    // I will just replace the calculation block.
 
-        datastoreFlows.outgoing.forEach((flowId, index) => {
-            const edge = diagram.edges.find(e => e.id === flowId);
-            const baseAngle = startAngle + (sectionSize * (index + 1)) / (dsOutCount + 1);
-            const angle = baseAngle + (edge?.sourceAngleOffset || 0);
-            handles.push({ id: flowId, angle, type: 'source' });
-        });
-    }
+    // Calculate Angles for Right Side (Datastores)
+    // User requested 0-180 degrees.
+    const rightAngles = distributeAngles(10, 170, rightFlows.length);
+    rightFlows.forEach((flow, i) => {
+        const baseAngle = rightAngles[i];
+        // Normalize angle to 0-360 for consistent rendering if needed, though transform usually allows negatives
+        let finalAngle = baseAngle + flow.edgeOffset;
+        if (finalAngle < 0) finalAngle += 360;
+        handles.push({ id: flow.id, angle: finalAngle, type: flow.type });
+    });
 
     // Convert angle to position on circle
     const getHandlePosition = (angle: number) => {
