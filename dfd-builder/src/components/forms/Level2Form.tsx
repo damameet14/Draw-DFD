@@ -87,7 +87,8 @@ export const Level2Form = () => {
     const handleAddDatastore = () => {
         if (!datastoreName.trim()) return;
 
-        const storeCode = `D${existingDatastores.length + 1}`;
+        // Auto-numbering removed
+        const storeCode = '';
         const yOffset = existingDatastores.length * 100;
         const newNode: DataStoreNode = {
             id: `ds2-${crypto.randomUUID().slice(0, 4)}`,
@@ -102,11 +103,16 @@ export const Level2Form = () => {
         setDatastoreName('');
     };
 
+    const handleUpdateDatastoreCode = (id: string, code: string) => {
+        const node = diagram.nodes.find(n => n.id === id) as DataStoreNode;
+        if (node) addNode({ ...node, storeCode: code });
+    };
+
     // --- Actions: Sub-Processes ---
 
     const handleAddSubProcess = () => {
-        const nextNum = existingSubProcesses.length + 1;
-        const number = parentProcessNumber ? `${parentProcessNumber}.${nextNum}` : `?.${nextNum}`;
+        // Auto-numbering removed per request
+        const number = '';
 
         const newProcess: SubProcessDefinition = {
             id: `sp_${crypto.randomUUID().slice(0, 4)}`,
@@ -331,7 +337,15 @@ export const Level2Form = () => {
                     <ul className={styles.list}>
                         {existingDatastores.map(ds => (
                             <li key={ds.id} className={styles.listItem}>
-                                <span>{ds.storeCode} - {ds.label}</span>
+                                <input
+                                    type="text"
+                                    value={ds.storeCode || ''}
+                                    onChange={(e) => handleUpdateDatastoreCode(ds.id, e.target.value)}
+                                    placeholder="ID"
+                                    className={styles.flowInput}
+                                    style={{ width: '40px', marginRight: '6px', textAlign: 'center' }}
+                                />
+                                <span style={{ flex: 1 }}>{ds.label}</span>
                                 <button onClick={() => removeNode(ds.id)} className={styles.deleteButton}><Trash2 size={16} /></button>
                             </li>
                         ))}
