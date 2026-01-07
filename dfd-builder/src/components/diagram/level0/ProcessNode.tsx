@@ -5,6 +5,30 @@ import { useDiagramStore } from '../../../store/useDiagramStore';
 import styles from './ProcessNode.module.css';
 import { UIVisibilityContext } from '../../../App';
 
+interface QuadrantHandleConfig {
+    inCircleSection: { start: number; end: number };
+    outCircleSection: { start: number; end: number };
+}
+
+const QUADRANT_CONFIGS: Record<string, QuadrantHandleConfig> = {
+    'top-left': {
+        inCircleSection: { start: 358, end: 328 },   // IN: Top of circle (from top-left entity)
+        outCircleSection: { start: 315, end: 285 }  // OUT: Bottom-left of circle (to top-left entity)
+    },
+    'top-right': {
+        inCircleSection: { start: 2, end: 40 },    // IN: Top-right of circle (from top-right entity)
+        outCircleSection: { start: 45, end: 88 }  // OUT: Bottom-right of circle (to top-right entity)
+    },
+    'bottom-left': {
+        inCircleSection: { start: 93, end: 125 },  // IN: Left of circle (from bottom-left entity)
+        outCircleSection: { start: 130, end: 165 }  // OUT: Bottom of circle (to bottom-left entity)
+    },
+    'bottom-right': {
+        inCircleSection: { start: 219, end: 240 },   // IN: Top-right of circle (from bottom-right entity) - wraps 0°
+        outCircleSection: { start: 182, end: 215 }  // OUT: Bottom of circle (to bottom-right entity)
+    }
+};
+
 
 
 export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
@@ -19,7 +43,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     const incomingFlows = diagram.edges.filter(e => e.targetNodeId === data.id);
     const outgoingFlows = diagram.edges.filter(e => e.sourceNodeId === data.id);
 
-    // Separate entity flows and datastore flows
+    // Separate entity flows
     const entityFlows = new Map<string, {
         incoming: string[],
         outgoing: string[],
@@ -27,12 +51,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         index: number
     }>();
 
-    const datastoreFlows = {
-        incoming: [] as string[],
-        outgoing: [] as string[]
-    };
-
-    // Get all entity nodes (and process_refs for Level 2)
+    // Get all entity nodes (and process_refs for Level 2 or context diagram external interactors)
     const entityNodes = diagram.nodes.filter(n => n.type === 'entity' || n.type === 'process_ref');
     const quadrantOrder = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
@@ -47,7 +66,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         });
     });
 
-    // Categorize flows by source/target type
+    // Categorize flows by source/target type - Level 0 only cares about Entities
     incomingFlows.forEach(flow => {
         const sourceNode = diagram.nodes.find(n => n.id === flow.sourceNodeId);
         if (sourceNode?.type === 'entity' || sourceNode?.type === 'process_ref') {
@@ -55,8 +74,6 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             if (entityData) {
                 entityData.incoming.push(flow.id);
             }
-        } else if (sourceNode?.type === 'datastore') {
-            datastoreFlows.incoming.push(flow.id);
         }
     });
 
@@ -67,8 +84,6 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             if (entityData) {
                 entityData.outgoing.push(flow.id);
             }
-        } else if (targetNode?.type === 'datastore') {
-            datastoreFlows.outgoing.push(flow.id);
         }
     });
 
@@ -79,118 +94,43 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         type: 'source' | 'target'
     }> = [];
 
-    // Helper: Distribute angles evenly within a range
+    // Helper: Distribute angles
     const distributeAngles = (startAngle: number, endAngle: number, count: number): number[] => {
         if (count === 0) return [];
-        // If full circle (360), step is 360/count. If arc, step is (end-start)/(count+1).
-        // Since we are doing left/right separation, we are using arcs (< 180 degrees generally to leave gaps at top/bottom).
-        // Let's use a safe margin.
-
-        // Left side: typically 135 to 225? Or 90 to 270?
-        // Let's define:
-        // Left Hemisphere (Entities): 90° (Bottom) -> 180° (Left) -> 270° (Top) in ReactFlow coords?
-        // Wait, ReactFlow/CSS angles: 0=Right, 90=Bottom, 180=Left, 270=Top.
-        // So Left side is 90 to 270.
-        // Right side is 270 → 360/0 → 90.
-
-        // We want to avoid 90 and 270 (Top/Bottom poles) to prevent overlap between left/right groups at the poles.
-        // So Left Range: 100° to 260°.
-        // Right Range: 280° to 440° (i.e. 80°).
-
-        const availableArc = endAngle - startAngle;
-        const step = availableArc / (count + 1);
+        // Even distribution within range
+        const totalAngle = endAngle - startAngle;
+        const step = totalAngle / (count + 1);
         return Array.from({ length: count }, (_, i) => startAngle + step * (i + 1));
     };
 
-    // Collect all unique flows
-    const leftFlows: { id: string, type: 'source' | 'target', edgeOffset: number }[] = [];
-    const rightFlows: { id: string, type: 'source' | 'target', edgeOffset: number }[] = [];
-
-    // Process Entity Flows (LEFT)
+    // Process Entity Flows based on Quadrants
     entityFlows.forEach((entityData) => {
-        // IN (Entity -> Process): Target Handle
-        entityData.incoming.forEach(id => {
-            const edge = diagram.edges.find(e => e.id === id);
-            leftFlows.push({ id, type: 'target', edgeOffset: edge?.targetAngleOffset || 0 });
-        });
-        // OUT (Process -> Entity): Source Handle
-        entityData.outgoing.forEach(id => {
-            const edge = diagram.edges.find(e => e.id === id);
-            leftFlows.push({ id, type: 'source', edgeOffset: edge?.sourceAngleOffset || 0 });
-        });
-    });
+        const config = QUADRANT_CONFIGS[entityData.quadrant];
+        if (!config) return;
 
-    // Process Datastore Flows (RIGHT)
-    datastoreFlows.incoming.forEach(id => { // DS -> Process (Target)
-        const edge = diagram.edges.find(e => e.id === id);
-        rightFlows.push({ id, type: 'target', edgeOffset: edge?.targetAngleOffset || 0 });
-    });
-    datastoreFlows.outgoing.forEach(id => { // Process -> DS (Source)
-        const edge = diagram.edges.find(e => e.id === id);
-        rightFlows.push({ id, type: 'source', edgeOffset: edge?.sourceAngleOffset || 0 });
-    });
-
-    // Calculate Angles for Left Side (Entities) - Grouped by Entity
-    // User requested 180-360 degrees.
-    // Grouping: "position ins and outs of entities close to each other just 5 degree distant"
-
-    const entityIds = Array.from(entityFlows.keys());
-    if (entityIds.length > 0) {
-        // Distribute the *centers* of the entities
-        const entityCenters = distributeAngles(190, 350, entityIds.length);
-
-        entityIds.forEach((entityId, index) => {
-            const centerAngle = entityCenters[index];
-            const data = entityFlows.get(entityId)!;
-
-            // Collect all flows for this entity
-            // Note: We need to handle INs and OUTs.
-            // Let's combine them. Order matters? Maybe INs top, OUTs bottom? or arbitrary?
-            // User didn't specify order, just "close to each other".
-            // Let's put Incoming (Entity->Process) then Outgoing (Process->Entity).
-            const entFlows: { id: string, type: 'source' | 'target', edgeOffset: number }[] = [];
-
-            data.incoming.forEach(id => {
+        // INCOMING (Entity -> Process) = Target Handles
+        // Layout in inCircleSection
+        const incomingIds = entityData.incoming;
+        if (incomingIds.length > 0) {
+            const angles = distributeAngles(config.inCircleSection.start, config.inCircleSection.end, incomingIds.length);
+            incomingIds.forEach((id, idx) => {
                 const edge = diagram.edges.find(e => e.id === id);
-                entFlows.push({ id, type: 'target', edgeOffset: edge?.targetAngleOffset || 0 });
+                const angle = angles[idx] + (edge?.targetAngleOffset || 0);
+                handles.push({ id, angle, type: 'target' });
             });
-            data.outgoing.forEach(id => {
+        }
+
+        // OUTGOING (Process -> Entity) = Source Handles
+        // Layout in outCircleSection
+        const outgoingIds = entityData.outgoing;
+        if (outgoingIds.length > 0) {
+            const angles = distributeAngles(config.outCircleSection.start, config.outCircleSection.end, outgoingIds.length);
+            outgoingIds.forEach((id, idx) => {
                 const edge = diagram.edges.find(e => e.id === id);
-                entFlows.push({ id, type: 'source', edgeOffset: edge?.sourceAngleOffset || 0 });
+                const angle = angles[idx] + (edge?.sourceAngleOffset || 0);
+                handles.push({ id, angle, type: 'source' });
             });
-
-            // Position flows around center with 5 degree spacing
-            const spacing = 5;
-            const flowCount = entFlows.length;
-            const startOffset = -((flowCount - 1) * spacing) / 2;
-
-            entFlows.forEach((flow, flowIdx) => {
-                const angleOffset = startOffset + (flowIdx * spacing);
-                // Base angle is center + spacing offset
-                const baseAngle = centerAngle + angleOffset;
-
-                // Add manual drag offset
-                const finalAngle = baseAngle + flow.edgeOffset;
-
-                handles.push({ id: flow.id, angle: finalAngle, type: flow.type });
-            });
-        });
-    }
-
-    // Previous flat distribution logic replaced by above.
-    // (Removed leftFlows usage for calculation, though we constructed it earlier. We can leave the construction or unused vars if it simplifies)
-    // To be clean, I should comment out or remove the 'leftFlows' construction if it's no longer used, but the prompt replaces lines 133-141.
-    // I will just replace the calculation block.
-
-    // Calculate Angles for Right Side (Datastores)
-    // User requested 0-180 degrees.
-    const rightAngles = distributeAngles(10, 170, rightFlows.length);
-    rightFlows.forEach((flow, i) => {
-        const baseAngle = rightAngles[i];
-        // Normalize angle to 0-360 for consistent rendering if needed, though transform usually allows negatives
-        let finalAngle = baseAngle + flow.edgeOffset;
-        if (finalAngle < 0) finalAngle += 360;
-        handles.push({ id: flow.id, angle: finalAngle, type: flow.type });
+        }
     });
 
     // Convert angle to position on circle

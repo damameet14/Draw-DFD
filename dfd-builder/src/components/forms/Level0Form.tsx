@@ -8,9 +8,9 @@ export const Level0Form = () => {
     const { diagram, addNode, updateNode, removeNode, addEdge, removeEdge, setDiagramName } = useDiagramStore();
 
     const [entityName, setEntityName] = useState('');
-    const [dataFlowName, setDataFlowName] = useState('');
+    const [inFlowName, setInFlowName] = useState('');
+    const [outFlowName, setOutFlowName] = useState('');
     const [selectedEntityId, setSelectedEntityId] = useState<string>('');
-    const [flowDirection, setFlowDirection] = useState<'in' | 'out'>('in');
 
     // Ensure Process 0.0 exists
     useEffect(() => {
@@ -66,31 +66,34 @@ export const Level0Form = () => {
     };
 
     const handleAddFlow = () => {
-        if (!dataFlowName.trim() || !selectedEntityId || !mainProcess) return;
+        if ((!inFlowName.trim() && !outFlowName.trim()) || !selectedEntityId || !mainProcess) return;
 
-        const newEdgeId = `df-${crypto.randomUUID().slice(0, 4)}`;
-
-        if (flowDirection === 'in') {
+        // Add In Flow (Entity -> Process)
+        if (inFlowName.trim()) {
             addEdge({
-                id: newEdgeId,
+                id: `df-${crypto.randomUUID().slice(0, 4)}`,
                 type: 'dataflow',
-                label: dataFlowName,
+                label: inFlowName,
                 sourceNodeId: selectedEntityId,
                 targetNodeId: mainProcess.id,
                 level: 0
             });
-        } else {
+        }
+
+        // Add Out Flow (Process -> Entity)
+        if (outFlowName.trim()) {
             addEdge({
-                id: newEdgeId,
+                id: `df-${crypto.randomUUID().slice(0, 4)}`,
                 type: 'dataflow',
-                label: dataFlowName,
+                label: outFlowName,
                 sourceNodeId: mainProcess.id,
                 targetNodeId: selectedEntityId,
                 level: 0
             });
         }
 
-        setDataFlowName('');
+        setInFlowName('');
+        setOutFlowName('');
     };
 
     return (
@@ -151,30 +154,12 @@ export const Level0Form = () => {
                     </h3>
 
                     <div className={styles.flowBox}>
-                        <div className={styles.flowInputGroup}>
-                            <label className={styles.flowLabel}>Flow Name</label>
-                            <input
-                                type="text"
-                                value={dataFlowName}
-                                onChange={(e) => setDataFlowName(e.target.value)}
-                                placeholder="e.g. Login Request"
-                                className={styles.flowInput}
-                            />
-                        </div>
-
                         <div className={styles.flowSelects}>
-                            <select
-                                value={flowDirection}
-                                onChange={(e) => setFlowDirection(e.target.value as 'in' | 'out')}
-                                className={styles.flowSelectSmall}
-                            >
-                                <option value="in">In From</option>
-                                <option value="out">Out To</option>
-                            </select>
                             <select
                                 value={selectedEntityId}
                                 onChange={(e) => setSelectedEntityId(e.target.value)}
                                 className={styles.flowSelectLarge}
+                                style={{ width: '100%', marginBottom: '10px' }}
                             >
                                 <option value="">Select Entity...</option>
                                 {entities.map(e => (
@@ -183,9 +168,33 @@ export const Level0Form = () => {
                             </select>
                         </div>
 
+                        {/* IN FLOW INPUT */}
+                        <div className={styles.flowInputGroup}>
+                            <label className={styles.flowLabel}>In Flow (From Entity)</label>
+                            <input
+                                type="text"
+                                value={inFlowName}
+                                onChange={(e) => setInFlowName(e.target.value)}
+                                placeholder="e.g. Request"
+                                className={styles.flowInput}
+                            />
+                        </div>
+
+                        {/* OUT FLOW INPUT */}
+                        <div className={styles.flowInputGroup}>
+                            <label className={styles.flowLabel}>Out Flow (To Entity)</label>
+                            <input
+                                type="text"
+                                value={outFlowName}
+                                onChange={(e) => setOutFlowName(e.target.value)}
+                                placeholder="e.g. Response"
+                                className={styles.flowInput}
+                            />
+                        </div>
+
                         <button
                             onClick={handleAddFlow}
-                            disabled={!dataFlowName || !selectedEntityId}
+                            disabled={(!inFlowName && !outFlowName) || !selectedEntityId}
                             className={styles.flowAddButton}
                         >
                             Add Flow <ArrowRight size={16} />
