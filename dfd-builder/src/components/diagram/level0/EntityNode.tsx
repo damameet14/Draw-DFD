@@ -1,9 +1,9 @@
 import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
 import { useState, useEffect, useRef, useContext } from 'react';
-import { type EntityNode as EntityNodeType } from '../../core/types';
-import { useDiagramStore } from '../../store/useDiagramStore';
+import { type EntityNode as EntityNodeType } from '../../../core/types';
+import { useDiagramStore } from '../../../store/useDiagramStore';
 import styles from './EntityNode.module.css';
-import { UIVisibilityContext } from '../../App';
+import { UIVisibilityContext } from '../../../App';
 
 export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
     const { diagram, updateNode, updateEdge } = useDiagramStore();

@@ -1,9 +1,9 @@
 import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
 import { useState, useEffect, useRef, useContext } from 'react';
-import { type ProcessNode as ProcessNodeType } from '../../core/types';
-import { useDiagramStore } from '../../store/useDiagramStore';
+import { type ProcessNode as ProcessNodeType } from '../../../core/types';
+import { useDiagramStore } from '../../../store/useDiagramStore';
 import styles from './ProcessNode.module.css';
-import { UIVisibilityContext } from '../../App';
+import { UIVisibilityContext } from '../../../App';
 
 
 

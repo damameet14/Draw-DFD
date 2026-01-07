@@ -1,9 +1,9 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { type DataStoreNode as DataStoreNodeType } from '../../core/types';
-import { useDiagramStore } from '../../store/useDiagramStore';
+import { type DataStoreNode as DataStoreNodeType } from '../../../core/types';
+import { useDiagramStore } from '../../../store/useDiagramStore';
 import styles from './DataStoreNode.module.css';
 import { useState, useEffect, useRef, useContext } from 'react';
-import { UIVisibilityContext } from '../../App';
+import { UIVisibilityContext } from '../../../App';
 
 export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) => {
     const { diagram, updateEdge } = useDiagramStore();

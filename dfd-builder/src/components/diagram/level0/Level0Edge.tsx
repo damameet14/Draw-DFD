@@ -1,8 +1,8 @@
 import { type FC, useState, useEffect, useContext } from 'react';
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getSmoothStepPath, useReactFlow } from 'reactflow';
-import { useDiagramStore } from '../../store/useDiagramStore';
+import { useDiagramStore } from '../../../store/useDiagramStore';
 import { RotateCw } from 'lucide-react';
-import { UIVisibilityContext } from '../../App';
+import { UIVisibilityContext } from '../../../App';
 
 export const CustomOrthogonalEdge: FC<EdgeProps> = ({
     id,

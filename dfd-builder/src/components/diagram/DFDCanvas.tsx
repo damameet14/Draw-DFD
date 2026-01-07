@@ -11,24 +11,36 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { ProcessNode } from './ProcessNode';
-import { EntityNode } from './EntityNode';
-import { DataStoreNode } from './DataStoreNode';
-import { CustomOrthogonalEdge } from './CustomOrthogonalEdge';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './DFDCanvas.module.css';
 import { type DFDLevel } from '../../core/types';
 
-const nodeTypes: NodeTypes = {
-    process: ProcessNode,
-    entity: EntityNode,
-    datastore: DataStoreNode,
-    process_ref: EntityNode, // Reusing EntityNode for external process refs for now
-};
+// Level 0 Components
+import { ProcessNode as L0Process } from './level0/ProcessNode';
+import { EntityNode as L0Entity } from './level0/EntityNode';
+import { DataStoreNode as L0Store } from './level0/DataStoreNode';
+import { CustomOrthogonalEdge as L0Edge } from './level0/Level0Edge';
 
-const edgeTypes: EdgeTypes = {
-    orthogonal: CustomOrthogonalEdge,
-};
+// Level 1 Components
+import { ProcessNode as L1Process } from './level1/ProcessNode';
+import { EntityNode as L1Entity } from './level1/EntityNode';
+import { DataStoreNode as L1Store } from './level1/DataStoreNode';
+import { CustomOrthogonalEdge as L1Edge } from './level1/Level1Edge';
+
+// Level 2 Components
+import { ProcessNode as L2Process } from './level2/ProcessNode';
+import { EntityNode as L2Entity } from './level2/EntityNode';
+import { DataStoreNode as L2Store } from './level2/DataStoreNode';
+import { CustomOrthogonalEdge as L2Edge } from './level2/Level2Edge';
+
+const level0NodeTypes: NodeTypes = { process: L0Process, entity: L0Entity, datastore: L0Store, process_ref: L0Entity };
+const level0EdgeTypes: EdgeTypes = { orthogonal: L0Edge };
+
+const level1NodeTypes: NodeTypes = { process: L1Process, entity: L1Entity, datastore: L1Store, process_ref: L1Entity };
+const level1EdgeTypes: EdgeTypes = { orthogonal: L1Edge };
+
+const level2NodeTypes: NodeTypes = { process: L2Process, entity: L2Entity, datastore: L2Store, process_ref: L2Entity };
+const level2EdgeTypes: EdgeTypes = { orthogonal: L2Edge };
 
 interface DFDCanvasProps {
     currentLevel: DFDLevel;
@@ -36,6 +48,10 @@ interface DFDCanvasProps {
 
 export const DFDCanvas = ({ currentLevel }: DFDCanvasProps) => {
     const { diagram, updateNode } = useDiagramStore();
+
+    // Select types based on level
+    const nodeTypes = currentLevel === 0 ? level0NodeTypes : (currentLevel === 2 ? level2NodeTypes : level1NodeTypes);
+    const edgeTypes = currentLevel === 0 ? level0EdgeTypes : (currentLevel === 2 ? level2EdgeTypes : level1EdgeTypes);
 
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
