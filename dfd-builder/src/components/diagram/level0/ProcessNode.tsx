@@ -5,30 +5,110 @@ import { useDiagramStore } from '../../../store/useDiagramStore';
 import styles from './ProcessNode.module.css';
 import { UIVisibilityContext } from '../../../App';
 
-interface QuadrantHandleConfig {
-    inCircleSection: { start: number; end: number };
-    outCircleSection: { start: number; end: number };
-}
+// =====================================================================
+// QUADRANT SYSTEM (Fixed, Absolute)
+// 0° at 12 o'clock, angles increase clockwise
+// =====================================================================
+type Quadrant = 'top' | 'right' | 'bottom' | 'left';
 
-const QUADRANT_CONFIGS: Record<string, QuadrantHandleConfig> = {
-    'top-left': {
-        inCircleSection: { start: 358, end: 328 },   // IN: Top of circle
-        outCircleSection: { start: 315, end: 285 }  // OUT: Bottom-left
-    },
-    'top-right': {
-        inCircleSection: { start: 2, end: 40 },    // IN: Top-right
-        outCircleSection: { start: 45, end: 88 }  // OUT: Bottom-right
-    },
-    'bottom-left': {
-        inCircleSection: { start: 93, end: 125 },  // IN: Left
-        outCircleSection: { start: 130, end: 165 }  // OUT: Bottom
-    },
-    'bottom-right': {
-        inCircleSection: { start: 219, end: 240 },   // IN: Top-right
-        outCircleSection: { start: 182, end: 215 }  // OUT: Bottom
-    }
+const QUADRANT_START_ANGLES: Record<Quadrant, number> = {
+    top: 270,
+    right: 0,
+    bottom: 90,
+    left: 180
 };
 
+const QUADRANT_ORDER: Quadrant[] = ['top', 'right', 'bottom', 'left'];
+
+// =====================================================================
+// PURE LAYOUT FUNCTION
+// f(entityIndex, totalEntities) → layout info
+// =====================================================================
+interface EntityLayoutInfo {
+    quadrant: Quadrant;
+    processSection: { start: number; end: number };
+    inFlowRange: { start: number; end: number };
+    outFlowRange: { start: number; end: number };
+    entityInSide: 'top' | 'right' | 'bottom' | 'left';
+    entityOutSide: 'top' | 'right' | 'bottom' | 'left';
+}
+
+function getEntityLayoutInfo(entityIndex: number, totalEntities: number): EntityLayoutInfo {
+    // entityIndex is 0-based
+    // Quadrant assignment: cyclic TOP → RIGHT → BOTTOM → LEFT → TOP ...
+    const quadrantIndex = entityIndex % 4;
+    const quadrant = QUADRANT_ORDER[quadrantIndex];
+
+    // Count entities per quadrant
+    const entitiesPerQuadrant: Record<Quadrant, number> = { top: 0, right: 0, bottom: 0, left: 0 };
+    for (let i = 0; i < totalEntities; i++) {
+        const q = QUADRANT_ORDER[i % 4];
+        entitiesPerQuadrant[q]++;
+    }
+
+    const m = entitiesPerQuadrant[quadrant]; // entities in this quadrant
+    const sectionSize = 90 / m;
+
+    // k = 0-based index of this entity within its quadrant
+    const k = Math.floor(entityIndex / 4);
+
+    const S_q = QUADRANT_START_ANGLES[quadrant];
+
+    // Section calculation depends on quadrant:
+    // TOP/BOTTOM: First entity (k=0) should be at the END of quadrant (close to 360° and 180°)
+    // RIGHT/LEFT: First entity (k=0) should be at the START of quadrant (close to 0° and 180°)
+    let sectionStart: number;
+    let sectionEnd: number;
+
+    if (quadrant === 'top' || quadrant === 'bottom') {
+        // Reverse order: k=0 at end of quadrant
+        sectionEnd = S_q + 90 - k * sectionSize;
+        sectionStart = S_q + 90 - (k + 1) * sectionSize;
+    } else {
+        // Normal order: k=0 at start of quadrant
+        sectionStart = S_q + k * sectionSize;
+        sectionEnd = S_q + (k + 1) * sectionSize;
+    }
+
+    const half = sectionSize / 2;
+
+    // Flow ranges depend on quadrant
+    // For TOP and LEFT: OUT first (lower angles), then IN (higher angles)
+    // For RIGHT and BOTTOM: IN first (lower angles), then OUT (higher angles)
+    let inFlowRange: { start: number; end: number };
+    let outFlowRange: { start: number; end: number };
+
+    if (quadrant === 'top' || quadrant === 'left') {
+        // OUT in lower half, IN in upper half
+        outFlowRange = { start: sectionStart, end: sectionStart + half };
+        inFlowRange = { start: sectionStart + half, end: sectionEnd };
+    } else {
+        // RIGHT and BOTTOM: IN in lower half, OUT in upper half
+        inFlowRange = { start: sectionStart, end: sectionStart + half };
+        outFlowRange = { start: sectionStart + half, end: sectionEnd };
+    }
+
+    // Entity node side assignment (fixed by quadrant)
+    const ENTITY_SIDES: Record<Quadrant, { inSide: 'top' | 'right' | 'bottom' | 'left'; outSide: 'top' | 'right' | 'bottom' | 'left' }> = {
+        top: { inSide: 'right', outSide: 'bottom' },
+        right: { inSide: 'left', outSide: 'bottom' },
+        bottom: { inSide: 'top', outSide: 'left' },
+        left: { inSide: 'top', outSide: 'right' }
+    };
+
+    return {
+        quadrant,
+        processSection: { start: sectionStart, end: sectionEnd },
+        inFlowRange,
+        outFlowRange,
+        entityInSide: ENTITY_SIDES[quadrant].inSide,
+        entityOutSide: ENTITY_SIDES[quadrant].outSide
+    };
+}
+
+// =====================================================================
+// PROCESS NODE COMPONENT
+// =====================================================================
 export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     const { diagram, updateNode, updateEdge } = useDiagramStore();
     const updateNodeInternals = useUpdateNodeInternals();
@@ -36,53 +116,34 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     const [draggingHandleId, setDraggingHandleId] = useState<string | null>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
 
-    // Get custom diameter or use default
     const diameter = data.diameter || 200;
     const circleRadius = diameter / 2;
     const incomingFlows = diagram.edges.filter(e => e.targetNodeId === data.id);
     const outgoingFlows = diagram.edges.filter(e => e.sourceNodeId === data.id);
 
-    // Separate entity flows
-    const entityFlows = new Map<string, {
-        incoming: string[],
-        outgoing: string[],
-        quadrant: string,
-        index: number
-    }>();
+    // Get all Level 0 entity nodes
+    const entityNodes = diagram.nodes.filter(n => n.type === 'entity' && n.level === 0);
+    const totalEntities = entityNodes.length;
 
-    // Get all entity nodes (and process_refs)
-    const entityNodes = diagram.nodes.filter(n => n.type === 'entity' || n.type === 'process_ref');
-    const quadrantOrder = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-
-    // Initialize entity flows map
+    // Build entity layout map
+    const entityLayoutMap = new Map<string, { layout: EntityLayoutInfo; incoming: string[]; outgoing: string[] }>();
     entityNodes.forEach((entity, index) => {
-        const quadrant = quadrantOrder[index % 4];
-        entityFlows.set(entity.id, {
-            incoming: [],
-            outgoing: [],
-            quadrant,
-            index
-        });
+        const layout = getEntityLayoutInfo(index, totalEntities);
+        entityLayoutMap.set(entity.id, { layout, incoming: [], outgoing: [] });
     });
 
-    // Categorize flows
+    // Categorize flows by entity
     incomingFlows.forEach(flow => {
-        const sourceNode = diagram.nodes.find(n => n.id === flow.sourceNodeId);
-        if (sourceNode?.type === 'entity' || sourceNode?.type === 'process_ref') {
-            const entityData = entityFlows.get(flow.sourceNodeId);
-            if (entityData) entityData.incoming.push(flow.id);
-        }
+        const entry = entityLayoutMap.get(flow.sourceNodeId);
+        if (entry) entry.incoming.push(flow.id);
     });
 
     outgoingFlows.forEach(flow => {
-        const targetNode = diagram.nodes.find(n => n.id === flow.targetNodeId);
-        if (targetNode?.type === 'entity' || targetNode?.type === 'process_ref') {
-            const entityData = entityFlows.get(flow.targetNodeId);
-            if (entityData) entityData.outgoing.push(flow.id);
-        }
+        const entry = entityLayoutMap.get(flow.targetNodeId);
+        if (entry) entry.outgoing.push(flow.id);
     });
 
-    // Generate Raw Handles first
+    // Generate handles
     interface ProcessHandle {
         id: string;
         angle: number;
@@ -92,64 +153,55 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     }
     const rawHandles: ProcessHandle[] = [];
 
-    // Helper: Distribute angles (Basic)
-    const distributeAngles = (startAngle: number, endAngle: number, count: number): number[] => {
+    const distributeAngles = (start: number, end: number, count: number): number[] => {
         if (count === 0) return [];
-        const totalAngle = endAngle - startAngle;
-        const step = totalAngle / (count + 1);
-        return Array.from({ length: count }, (_, i) => startAngle + step * (i + 1));
+        const step = (end - start) / (count + 1);
+        return Array.from({ length: count }, (_, i) => start + step * (i + 1));
     };
 
-    // Process Entity Flows based on Quadrants to generate RAW positions
-    entityFlows.forEach((entityData) => {
-        const config = QUADRANT_CONFIGS[entityData.quadrant];
-        if (!config) return;
+    entityLayoutMap.forEach((data) => {
+        const { layout, incoming, outgoing } = data;
 
-        // INCOMING
-        const incomingIds = entityData.incoming;
-        if (incomingIds.length > 0) {
-            const angles = distributeAngles(config.inCircleSection.start, config.inCircleSection.end, incomingIds.length);
-            incomingIds.forEach((id, idx) => {
+        // IN-flows (Entity → Process) = target handles
+        if (incoming.length > 0) {
+            const angles = distributeAngles(layout.inFlowRange.start, layout.inFlowRange.end, incoming.length);
+            incoming.forEach((id, idx) => {
                 const edge = diagram.edges.find(e => e.id === id);
-                // raw angle includes offset
                 const angle = angles[idx] + (edge?.targetAngleOffset || 0);
                 rawHandles.push({
                     id,
                     angle,
                     type: 'target',
-                    sectionStart: config.inCircleSection.start,
-                    sectionEnd: config.inCircleSection.end
+                    sectionStart: layout.inFlowRange.start,
+                    sectionEnd: layout.inFlowRange.end
                 });
             });
         }
 
-        // OUTGOING
-        const outgoingIds = entityData.outgoing;
-        if (outgoingIds.length > 0) {
-            const angles = distributeAngles(config.outCircleSection.start, config.outCircleSection.end, outgoingIds.length);
-            outgoingIds.forEach((id, idx) => {
+        // OUT-flows (Process → Entity) = source handles
+        if (outgoing.length > 0) {
+            const angles = distributeAngles(layout.outFlowRange.start, layout.outFlowRange.end, outgoing.length);
+            outgoing.forEach((id, idx) => {
                 const edge = diagram.edges.find(e => e.id === id);
                 const angle = angles[idx] + (edge?.sourceAngleOffset || 0);
                 rawHandles.push({
                     id,
                     angle,
                     type: 'source',
-                    sectionStart: config.outCircleSection.start,
-                    sectionEnd: config.outCircleSection.end
+                    sectionStart: layout.outFlowRange.start,
+                    sectionEnd: layout.outFlowRange.end
                 });
             });
         }
     });
 
-    // COLLISION RESOLUTION & DISTRIBUTED HANDLES
+    // COLLISION RESOLUTION
     const distributedHandles: ProcessHandle[] = [];
     const minGapPx = 25;
-    const minGapRad = minGapPx / circleRadius; // Arc length formula s = r*theta -> theta = s/r
+    const minGapRad = minGapPx / circleRadius;
     const minGapDeg = minGapRad * (180 / Math.PI);
 
-    // Group handles by quadrant/section to resolve overlaps locally
     const sections = new Map<string, ProcessHandle[]>();
-
     rawHandles.forEach(h => {
         const key = `${h.sectionStart}-${h.sectionEnd}`;
         if (!sections.has(key)) sections.set(key, []);
@@ -165,20 +217,12 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             return;
         }
 
-        // Sort by angle
-        // Note: Range might be reversed (e.g. 358 to 328). We need to respect the direction.
-        // Or determine 'linear' position.
         const [startStr, endStr] = key.split('-');
         const start = parseFloat(startStr);
         const end = parseFloat(endStr);
-        // const isCounterClockwise = start > end; - Unused, sorting by angle value directly.
-        // isCounterClockwise unused, ignoring for now as we sort by angle value.
-        // 358 -> 328 is decreasing (-30). 93 -> 125 is increasing (+32).
-        // Let's just sort by value and see distance.
 
         handlesInSection.sort((a, b) => a.angle - b.angle);
 
-        // Iterative spread
         let changed = true;
         let iter = 0;
         const localHandles = [...handlesInSection];
@@ -189,12 +233,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             for (let i = 0; i < localHandles.length - 1; i++) {
                 const h1 = localHandles[i];
                 const h2 = localHandles[i + 1];
-
-                // Gap
-                let gap = Math.abs(h2.angle - h1.angle);
-                // Handle wrap-around case? Angles are usually close here, but if one is 359 and other is 1...
-                // But our distribution generates them in range. drag might push them out.
-                // Assuming simple linear diff for now as they are confined to quadrant.
+                const gap = Math.abs(h2.angle - h1.angle);
 
                 if (gap < minGapDeg) {
                     const center = (h1.angle + h2.angle) / 2;
@@ -207,23 +246,16 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             localHandles.sort((a, b) => a.angle - b.angle);
         }
 
-        // Store distributed
         localHandles.forEach(h => distributedHandles.push(h));
 
-        // CHECK CAPACITY
-        // Total needed angular span
+        // Check capacity
         const count = localHandles.length;
         const totalNeededSpanDeg = count * minGapDeg;
         const availableSpanDeg = Math.abs(end - start);
 
         if (totalNeededSpanDeg > availableSpanDeg) {
-            // We need more space.
-            // totalNeededSpanRad * R_new = availableArcLength? No.
-            // We need valid distribution.
-            // Actually, we need the arc gap to correspond to 15px.
-            // availableSpanRad * R_new >= count * 15px
             const availableSpanRad = availableSpanDeg * (Math.PI / 180);
-            const neededArcLen = count * (minGapPx + 5); // +padding
+            const neededArcLen = count * (minGapPx + 5);
             const neededR = neededArcLen / availableSpanRad;
             const neededD = neededR * 2;
 
@@ -234,7 +266,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         }
     });
 
-    // Handle Auto-Resize
+    // Auto-resize
     useEffect(() => {
         if (draggingHandleId) return;
         if (resizeNeeded && requiredDiameter > diameter) {
@@ -245,7 +277,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         }
     }, [resizeNeeded, requiredDiameter, diameter, draggingHandleId, updateNode, data.id]);
 
-    // Position Helper
+    // Position helper
     const getHandlePosition = (angle: number) => {
         const rad = (angle - 90) * (Math.PI / 180);
         const x = circleRadius + circleRadius * Math.cos(rad);
@@ -282,35 +314,10 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             const handle = distributedHandles.find(h => h.id === draggingHandleId);
             if (!handle) return;
 
-            // Logic to calculate offset
-            // Problem: handle.angle is distributed. We need base angle derived from distribution logic?
-            // Actually, we should just assume the user is "adding" offset to the CURRENT visual angle relative to default.
-            // Or simpler: The stored offset is what we modify.
-            // visualAngle = defaultAngle + storedOffset.
-            // mouseAngle = visualAngle_new.
-            // storedOffset_new = mouseAngle - defaultAngle.
-            // We need defaultAngle.
-            // We can re-calculate defaultAngle by calling distributeAngles again for this specific group.
-
-            // Re-find group info
-            // Optimally we'd store defaultAngle on handle.
-            // For now, let's just use the current distributed angle as "base" if offset is 0?
-            // No, that causes drift.
-
-            // Let's simplfy: We just calculate delta from PREVIOUS visual angle?
-            // Or: mouseAngle - handle.angle (current visual) = delta.
-            // newOffset = oldOffset + delta.
-            // YES.
-
             const currentOffset = handle.type === 'source' ? (edge.sourceAngleOffset || 0) : (edge.targetAngleOffset || 0);
             const mouseAngle = getAngleFromMouse(e.clientX, e.clientY);
 
-            // Delta calculation needs to handle 360 wrap if simple subtraction fails (e.g. 359 -> 1).
-            // But getAngleFromMouse returns 0-360.
-            // Let's trust simple diff for small drags.
-
             let delta = mouseAngle - handle.angle;
-            // correction for wrap
             if (delta > 180) delta -= 360;
             if (delta < -180) delta += 360;
 
@@ -334,10 +341,9 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [draggingHandleId, diagram.edges, updateEdge, diameter]); // distributedHandles not needed in dep if we just need id
+    }, [draggingHandleId, diagram.edges, updateEdge, diameter]);
 
     useEffect(() => {
-        // Delay to ensure edges are ready
         const t = setTimeout(() => {
             updateNodeInternals(data.id);
         }, 50);
@@ -374,10 +380,11 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
 
                 // Determine logical position for edge routing
                 let position = Position.Top;
-                const normAngle = handle.angle % 360;
-                if (normAngle >= 45 && normAngle < 135) position = Position.Right;
-                else if (normAngle >= 135 && normAngle < 225) position = Position.Bottom;
-                else if (normAngle >= 225 && normAngle < 315) position = Position.Left;
+                const normAngle = ((handle.angle % 360) + 360) % 360;
+                if (normAngle >= 0 && normAngle < 90) position = Position.Right;
+                else if (normAngle >= 90 && normAngle < 180) position = Position.Bottom;
+                else if (normAngle >= 180 && normAngle < 270) position = Position.Left;
+                else position = Position.Top;
 
                 return (
                     <Handle
@@ -409,3 +416,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         </div>
     );
 };
+
+// Export the layout function for use by EntityNode
+export { getEntityLayoutInfo };
+export type { EntityLayoutInfo, Quadrant };

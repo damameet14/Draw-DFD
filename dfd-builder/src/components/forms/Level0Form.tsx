@@ -22,7 +22,7 @@ export const Level0Form = () => {
                 label: 'System',
                 processNumber: '0.0',
                 level: 0,
-                position: { x: 400, y: 300 }
+                position: { x: 450, y: 350 }
             };
             addNode(mainProcess);
         }
@@ -42,16 +42,53 @@ export const Level0Form = () => {
     const handleAddEntity = () => {
         if (!entityName.trim()) return;
 
-        // Corner positioning strategy (matching the reference image)
-        const positions = [
-            { x: 100, y: 100 },   // Top-left
-            { x: 700, y: 100 },   // Top-right
-            { x: 700, y: 500 },   // Bottom-right
-            { x: 100, y: 500 },   // Bottom-left
-        ];
+        // Process center on canvas
+        const PROCESS_CENTER = { x: 450, y: 350 };
+        const ENTITY_DISTANCE = 280; // Distance from process center to entity center
+        const ENTITY_SIZE = 120;
 
-        const currentIndex = entities.length % positions.length;
-        const position = positions[currentIndex];
+        // Calculate the entity's index and which quadrant it belongs to
+        const entityIndex = entities.length;
+        const quadrantIndex = entityIndex % 4;
+        const entitiesInQuadrantBefore = Math.floor(entityIndex / 4);
+
+        // Count total entities that will be in each quadrant after this one is added
+        const totalAfter = entityIndex + 1;
+        const entitiesPerQuadrant: number[] = [0, 0, 0, 0];
+        for (let i = 0; i < totalAfter; i++) {
+            entitiesPerQuadrant[i % 4]++;
+        }
+
+        const entitiesInThisQuadrant = entitiesPerQuadrant[quadrantIndex];
+        const sectionSize = 90 / entitiesInThisQuadrant;
+
+        // Quadrant start angles (0° at 12 o'clock)
+        // RIGHT: 0-90, BOTTOM: 90-180, LEFT: 180-270, TOP: 270-360
+        const quadrantStarts = [270, 0, 90, 180]; // TOP, RIGHT, BOTTOM, LEFT
+        const S_q = quadrantStarts[quadrantIndex];
+
+        // k = index of this entity within its quadrant (0-based)
+        const k = entitiesInQuadrantBefore;
+
+        // Calculate section based on quadrant
+        // TOP/BOTTOM: first entity at END of quadrant (near 360° and 180°)
+        // RIGHT/LEFT: first entity at START of quadrant (near 0° and 180°)
+        let sectionCenter: number;
+        if (quadrantIndex === 0 || quadrantIndex === 2) {
+            // TOP or BOTTOM: k=0 at end
+            sectionCenter = S_q + 90 - (k + 0.5) * sectionSize;
+        } else {
+            // RIGHT or LEFT: k=0 at start
+            sectionCenter = S_q + (k + 0.5) * sectionSize;
+        }
+
+        // Convert angle to canvas position
+        // 0° at 12 o'clock, clockwise: angle 0 = top, 90 = right, 180 = bottom, 270 = left
+        const angleRad = (sectionCenter - 90) * (Math.PI / 180);
+        const x = PROCESS_CENTER.x + ENTITY_DISTANCE * Math.cos(angleRad) - ENTITY_SIZE / 2;
+        const y = PROCESS_CENTER.y + ENTITY_DISTANCE * Math.sin(angleRad) - ENTITY_SIZE / 2;
+
+        const position = { x: Math.round(x), y: Math.round(y) };
 
         const newNode: EntityNode = {
             id: `e-${crypto.randomUUID().slice(0, 4)}`,

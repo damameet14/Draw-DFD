@@ -1,20 +1,31 @@
 import { Handle, Position, type NodeProps, NodeResizer, useUpdateNodeInternals } from 'reactflow';
-import { useState, useEffect, useRef, useContext } from 'react';
+import { useEffect, useRef, useContext } from 'react';
 import { type EntityNode as EntityNodeType } from '../../../core/types';
 import { useDiagramStore } from '../../../store/useDiagramStore';
 import styles from './EntityNode.module.css';
 import { UIVisibilityContext } from '../../../App';
+import { getEntityLayoutInfo } from './ProcessNode';
+
+type Side = 'top' | 'right' | 'bottom' | 'left';
 
 export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
-    const { diagram, updateNode, updateEdge } = useDiagramStore();
+    const { diagram, updateNode } = useDiagramStore();
     const updateNodeInternals = useUpdateNodeInternals();
     const { showHandles } = useContext(UIVisibilityContext);
-    const [draggingHandleId, setDraggingHandleId] = useState<string | null>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
 
-    // Get custom dimensions or use defaults - Default to SQUARE
     const width = data.width || 120;
     const height = data.height || 120;
+
+    // Determine this entity's index and layout info
+    const entityNodes = diagram.nodes.filter(n => n.type === 'entity' && n.level === 0);
+    const entityIndex = entityNodes.findIndex(n => n.id === data.id);
+    const totalEntities = entityNodes.length;
+
+    // Get layout info (quadrant, handle sides) from the pure function
+    const layoutInfo = entityIndex >= 0 ? getEntityLayoutInfo(entityIndex, totalEntities) : null;
+    const inSide: Side = layoutInfo?.entityInSide || 'right';
+    const outSide: Side = layoutInfo?.entityOutSide || 'bottom';
 
     // Get flows connected to this entity
     const incomingFlows = diagram.edges.filter(e =>
@@ -26,91 +37,34 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
 
     interface EntityHandle {
         id: string;
-        side: 'top' | 'right' | 'bottom' | 'left';
-        offset: number;  // Percentage 0-100
+        side: Side;
+        offset: number;
         type: 'source' | 'target';
     }
 
-    // Helper to decode position from single offset value
-    // Format: side is encoded in ranges: 0-25=top, 25-50=right, 50-75=bottom, 75-100=left
-    // Within each range, the exact position along that side is encoded
-    const decodePosition = (encodedOffset: number): { side: 'top' | 'right' | 'bottom' | 'left', offset: number } => {
-        if (encodedOffset === 0) {
-            // Default position
-            return { side: 'right', offset: 50 };
-        }
-
-        // Decode side from range
-        const normalizedOffset = Math.max(0, Math.min(100, encodedOffset));
-        if (normalizedOffset >= 0 && normalizedOffset < 25) {
-            return { side: 'top', offset: (normalizedOffset / 25) * 100 };
-        } else if (normalizedOffset >= 25 && normalizedOffset < 50) {
-            return { side: 'right', offset: ((normalizedOffset - 25) / 25) * 100 };
-        } else if (normalizedOffset >= 50 && normalizedOffset < 75) {
-            return { side: 'bottom', offset: ((normalizedOffset - 50) / 25) * 100 };
-        } else {
-            return { side: 'left', offset: ((normalizedOffset - 75) / 25) * 100 };
-        }
-    };
-
-    // Helper to encode position into single offset value
-    const encodePosition = (side: 'top' | 'right' | 'bottom' | 'left', offset: number): number => {
-        const normalizedOffset = Math.max(0, Math.min(100, offset));
-        switch (side) {
-            case 'top': return (normalizedOffset / 100) * 25;
-            case 'right': return 25 + (normalizedOffset / 100) * 25;
-            case 'bottom': return 50 + (normalizedOffset / 100) * 25;
-            case 'left': return 75 + (normalizedOffset / 100) * 25;
-        }
-    };
-
     const rawHandles: EntityHandle[] = [];
 
-    // Generate Raw Handles
-    incomingFlows.forEach(flow => {
-        const storedOffset = flow.targetAngleOffset;
-        let side: 'top' | 'right' | 'bottom' | 'left';
-        let offset: number;
-
-        if (storedOffset !== undefined && storedOffset !== 0) {
-            const decoded = decodePosition(storedOffset);
-            side = decoded.side;
-            offset = decoded.offset;
-        } else {
-            side = 'bottom';
-            offset = 50;
-        }
-        rawHandles.push({ id: flow.id, side, offset, type: 'target' });
+    // Incoming flows (Process → Entity) = target handles = OUT side on Entity
+    incomingFlows.forEach((flow, idx) => {
+        const count = incomingFlows.length;
+        const offset = count === 1 ? 50 : 20 + (idx * 60 / Math.max(1, count - 1));
+        rawHandles.push({ id: flow.id, side: outSide, offset, type: 'target' });
     });
 
-    outgoingFlows.forEach(flow => {
-        const storedOffset = flow.sourceAngleOffset;
-        let side: 'top' | 'right' | 'bottom' | 'left';
-        let offset: number;
-
-        if (storedOffset !== undefined && storedOffset !== 0) {
-            const decoded = decodePosition(storedOffset);
-            side = decoded.side;
-            offset = decoded.offset;
-        } else {
-            side = 'right';
-            offset = 50;
-        }
-        rawHandles.push({ id: flow.id, side, offset, type: 'source' });
+    // Outgoing flows (Entity → Process) = source handles = IN side on Entity
+    outgoingFlows.forEach((flow, idx) => {
+        const count = outgoingFlows.length;
+        const offset = count === 1 ? 50 : 20 + (idx * 60 / Math.max(1, count - 1));
+        rawHandles.push({ id: flow.id, side: inSide, offset, type: 'source' });
     });
 
     // DISTRIBUTE HANDLES LOGIC
-    // We want to visually separate handles that are too close, without necessarily changing their stored value permanently unless dragged.
     const distributedHandles: EntityHandle[] = [];
-    const minSpacingPx = 25; // Minimum pixels between handles as requested
+    const minSpacingPx = 25;
 
-    ['top', 'right', 'bottom', 'left'].forEach(side => {
-        const sideKey = side as 'top' | 'right' | 'bottom' | 'left';
-
-        // Filter and sort handles on this side
-        // Sort by offset primarily, ID secondarily for stability
+    (['top', 'right', 'bottom', 'left'] as Side[]).forEach(side => {
         const sideHandles = rawHandles
-            .filter(h => h.side === sideKey)
+            .filter(h => h.side === side)
             .sort((a, b) => {
                 if (Math.abs(a.offset - b.offset) > 0.1) return a.offset - b.offset;
                 return a.id.localeCompare(b.id);
@@ -118,16 +72,12 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
 
         if (sideHandles.length === 0) return;
 
-        const sideLength = (sideKey === 'top' || sideKey === 'bottom') ? width : height;
-
-        // Convert offsets to pixels for calculation
+        const sideLength = (side === 'top' || side === 'bottom') ? width : height;
         let positionsPx = sideHandles.map(h => (h.offset / 100) * sideLength);
 
-        // Resolve overlaps
         let changed = true;
         let iterations = 0;
 
-        // Iterative relaxation to spread handles
         while (changed && iterations < 10) {
             changed = false;
             iterations++;
@@ -138,7 +88,6 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
                 const diff = next - current;
 
                 if (diff < minSpacingPx) {
-                    // Overlap detected. Push apart symmetrically around center of overlap
                     const center = (current + next) / 2;
                     const halfSpace = minSpacingPx / 2.0;
                     positionsPx[i] = center - halfSpace;
@@ -147,54 +96,44 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
                 }
             }
 
-            // Re-sort after potential swaps
             positionsPx.sort((a, b) => a - b);
         }
 
-        // Convert back to percentages and store
         sideHandles.forEach((h, i) => {
             const visualOffset = (positionsPx[i] / sideLength) * 100;
-            // Always push to distributedHandles for rendering
             distributedHandles.push({ ...h, offset: visualOffset });
         });
     });
 
-
-    // Check for Resize Need
+    // Update node internals when handles change
     useEffect(() => {
-        // Debounce/Delay updateNodeInternals to ensure Edge is mounted
         const t = setTimeout(() => {
             updateNodeInternals(data.id);
         }, 50);
         return () => clearTimeout(t);
+    }, [distributedHandles.length, width, height, data.id, updateNodeInternals, diagram.edges, entityIndex]);
 
-        if (draggingHandleId) return;
-
+    // Auto-resize if needed
+    useEffect(() => {
         let newWidth = width;
         let newHeight = height;
         let shouldResize = false;
         const minPadding = 20;
 
-        // Simple congestion check: required space vs available space
         const countMap = { top: 0, right: 0, bottom: 0, left: 0 };
         distributedHandles.forEach(h => countMap[h.side]++);
 
         const requiredW = Math.max(
             (countMap.top * minSpacingPx) + minPadding,
             (countMap.bottom * minSpacingPx) + minPadding,
-            120 // Min width
+            120
         );
 
         const requiredH = Math.max(
             (countMap.left * minSpacingPx) + minPadding,
             (countMap.right * minSpacingPx) + minPadding,
-            120 // Min height
+            120
         );
-
-        // Also check if handles are pushed off-screen ( < 0% or > 100% )
-        // Actually, simple count-based logic is safer and more predictable for sizing than position-based
-        // because position-based can oscillate if we resize -> positions change -> unresize.
-        // Stick to count-based for stability.
 
         if (requiredW > width || requiredH > height) {
             const newSize = Math.max(requiredW, requiredH, width, height);
@@ -209,12 +148,9 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
             }, 300);
             return () => clearTimeout(timer);
         }
+    }, [distributedHandles.length, width, height, data.id, updateNode]);
 
-    }, [distributedHandles.length, width, height, draggingHandleId, data.id, updateNode]);
-
-
-    // Calculate handle position and React Flow Position
-    const getHandleStyleAndPosition = (side: 'top' | 'right' | 'bottom' | 'left', offset: number) => {
+    const getHandleStyleAndPosition = (side: Side, offset: number) => {
         const clampedOffset = Math.max(0, Math.min(100, offset));
 
         let style: any = {};
@@ -242,81 +178,6 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         return { style, position };
     };
 
-    // Calculate new side and offset from mouse position
-    const getNewPositionFromMouse = (clientX: number, clientY: number): { side: 'top' | 'right' | 'bottom' | 'left', offset: number } => {
-        if (!nodeRef.current) return { side: 'right', offset: 50 };
-        const rect = nodeRef.current.getBoundingClientRect();
-
-        const relX = ((clientX - rect.left) / rect.width) * 100;
-        const relY = ((clientY - rect.top) / rect.height) * 100;
-
-        const x = Math.max(0, Math.min(100, relX));
-        const y = Math.max(0, Math.min(100, relY));
-
-        const distToTop = y;
-        const distToBottom = 100 - y;
-        const distToLeft = x;
-        const distToRight = 100 - x;
-
-        const minDist = Math.min(distToTop, distToBottom, distToLeft, distToRight);
-
-        if (minDist === distToTop) return { side: 'top', offset: x };
-        if (minDist === distToBottom) return { side: 'bottom', offset: x };
-        if (minDist === distToLeft) return { side: 'left', offset: y };
-        return { side: 'right', offset: y };
-    };
-
-    // Start dragging a handle
-    const onHandleMouseDown = (e: React.MouseEvent, handleId: string) => {
-        if (!selected) return;
-        e.stopPropagation();
-        e.preventDefault();
-        setDraggingHandleId(handleId);
-    };
-
-    // Handle mouse move - update handle position with 2D movement
-    useEffect(() => {
-        if (!draggingHandleId) return;
-
-        const handleMouseMove = (e: MouseEvent) => {
-            const edge = diagram.edges.find(ed => ed.id === draggingHandleId);
-            if (!edge) return;
-
-            // We use distributedHandles simply to find which handle we are talking about, but we need the stored ID.
-            // We don't need the handle object itself for logic, just the ID.
-
-            // Get new position from mouse
-            const { side, offset } = getNewPositionFromMouse(e.clientX, e.clientY);
-
-            // Encode position as single value
-            const encodedOffset = encodePosition(side, offset);
-
-            // Update only the appropriate field for this handle
-            // We need to know if it's source or target. diagram.edges has that info.
-            // Wait, we need to know if the Entity is the source or target of THAT edge.
-            const isSource = edge.sourceNodeId === data.id;
-
-            if (isSource) {
-                updateEdge(draggingHandleId, { sourceAngleOffset: encodedOffset });
-            } else {
-                updateEdge(draggingHandleId, { targetAngleOffset: encodedOffset });
-            }
-        };
-
-        const handleMouseUp = () => {
-            setDraggingHandleId(null);
-        };
-
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
-
-        return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-        };
-    }, [draggingHandleId, diagram.edges, updateEdge, data.id]);
-
-    // Handle resize event
     const onResize = (_event: any, params: any) => {
         const size = Math.max(params.width, params.height);
         updateNode(data.id, { width: size, height: size });
@@ -328,7 +189,6 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
             className={`${styles.entityNode} ${selected ? styles.selected : ''}`}
             style={{ width: `${width}px`, height: `${height}px` }}
         >
-            {/* Resize handles - only show when selected */}
             <NodeResizer
                 isVisible={selected}
                 minWidth={100}
@@ -342,26 +202,23 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
                 }}
             />
 
-            {/* Dynamic draggable handles - can move anywhere along edges */}
             {showHandles && distributedHandles.map(handle => {
                 const { style, position } = getHandleStyleAndPosition(handle.side, handle.offset);
-                const isDragging = draggingHandleId === handle.id;
                 return (
                     <Handle
                         key={handle.id}
                         type={handle.type}
                         position={position}
                         id={handle.id}
-                        onMouseDown={(e) => onHandleMouseDown(e, handle.id)}
                         style={{
                             ...style,
-                            width: isDragging ? 14 : 10,
-                            height: isDragging ? 14 : 10,
+                            width: 10,
+                            height: 10,
                             background: handle.type === 'source' ? '#34d399' : '#60a5fa',
                             border: '2px solid #fff',
                             zIndex: 10,
-                            cursor: selected ? 'grab' : 'default',
-                            transition: isDragging ? 'none' : 'all 0.2s'
+                            cursor: 'default',
+                            transition: 'all 0.2s'
                         }}
                     />
                 );
