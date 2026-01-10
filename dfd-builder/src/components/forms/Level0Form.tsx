@@ -70,24 +70,30 @@ export const Level0Form = () => {
 
         // Add In Flow (Entity -> Process)
         if (inFlowName.trim()) {
+            const inEdgeId = `df-${crypto.randomUUID().slice(0, 4)}`; // Generate unique ID for IN edge
             addEdge({
-                id: `df-${crypto.randomUUID().slice(0, 4)}`,
+                id: inEdgeId,
                 type: 'dataflow',
                 label: inFlowName,
                 sourceNodeId: selectedEntityId,
                 targetNodeId: mainProcess.id,
+                sourceHandle: inEdgeId,
+                targetHandle: inEdgeId,
                 level: 0
             });
         }
 
         // Add Out Flow (Process -> Entity)
         if (outFlowName.trim()) {
+            const outEdgeId = `df-${crypto.randomUUID().slice(0, 4)}`; // Generate unique ID for OUT edge
             addEdge({
-                id: `df-${crypto.randomUUID().slice(0, 4)}`,
+                id: outEdgeId,
                 type: 'dataflow',
                 label: outFlowName,
                 sourceNodeId: mainProcess.id,
                 targetNodeId: selectedEntityId,
+                sourceHandle: outEdgeId,
+                targetHandle: outEdgeId,
                 level: 0
             });
         }

@@ -1,4 +1,4 @@
-import { Handle, Position, type NodeProps, NodeResizer } from 'reactflow';
+import { Handle, Position, type NodeProps, NodeResizer, useUpdateNodeInternals } from 'reactflow';
 import { useState, useEffect, useRef, useContext } from 'react';
 import { type EntityNode as EntityNodeType } from '../../../core/types';
 import { useDiagramStore } from '../../../store/useDiagramStore';
@@ -7,6 +7,7 @@ import { UIVisibilityContext } from '../../../App';
 
 export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
     const { diagram, updateNode, updateEdge } = useDiagramStore();
+    const updateNodeInternals = useUpdateNodeInternals();
     const { showHandles } = useContext(UIVisibilityContext);
     const [draggingHandleId, setDraggingHandleId] = useState<string | null>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
@@ -101,7 +102,7 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
     // DISTRIBUTE HANDLES LOGIC
     // We want to visually separate handles that are too close, without necessarily changing their stored value permanently unless dragged.
     const distributedHandles: EntityHandle[] = [];
-    const minSpacingPx = 20; // Minimum pixels between handles
+    const minSpacingPx = 25; // Minimum pixels between handles as requested
 
     ['top', 'right', 'bottom', 'left'].forEach(side => {
         const sideKey = side as 'top' | 'right' | 'bottom' | 'left';
@@ -161,6 +162,12 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
 
     // Check for Resize Need
     useEffect(() => {
+        // Debounce/Delay updateNodeInternals to ensure Edge is mounted
+        const t = setTimeout(() => {
+            updateNodeInternals(data.id);
+        }, 50);
+        return () => clearTimeout(t);
+
         if (draggingHandleId) return;
 
         let newWidth = width;
@@ -189,12 +196,10 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         // because position-based can oscillate if we resize -> positions change -> unresize.
         // Stick to count-based for stability.
 
-        if (requiredW > width) {
-            newWidth = requiredW;
-            shouldResize = true;
-        }
-        if (requiredH > height) {
-            newHeight = requiredH;
+        if (requiredW > width || requiredH > height) {
+            const newSize = Math.max(requiredW, requiredH, width, height);
+            newWidth = newSize;
+            newHeight = newSize;
             shouldResize = true;
         }
 
@@ -313,9 +318,8 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
 
     // Handle resize event
     const onResize = (_event: any, params: any) => {
-        const newWidth = Math.round(params.width);
-        const newHeight = Math.round(params.height);
-        updateNode(data.id, { width: newWidth, height: newHeight });
+        const size = Math.max(params.width, params.height);
+        updateNode(data.id, { width: size, height: size });
     };
 
     return (
@@ -330,7 +334,7 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
                 minWidth={100}
                 minHeight={100}
                 onResize={onResize}
-                keepAspectRatio={false}
+                keepAspectRatio={true}
                 handleStyle={{
                     width: 10,
                     height: 10,
