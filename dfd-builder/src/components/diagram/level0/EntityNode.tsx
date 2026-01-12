@@ -42,18 +42,53 @@ export const EntityNode = ({ data, selected }: NodeProps<EntityNodeType>) => {
         type: 'source' | 'target';
     }
 
+    // Helper: get pair index from pairId (scoped to THIS entity's flows only)
+    const getEntityPairIndex = (flowId: string): number => {
+        const edge = diagram.edges.find(e => e.id === flowId);
+        if (!edge?.pairId) return 0;
+
+        // Find unique pairIds ONLY from this entity's flows (in order they appear)
+        const entityFlows = [...incomingFlows, ...outgoingFlows];
+        const pairIds: string[] = [];
+        entityFlows.forEach(f => {
+            if (f.pairId && !pairIds.includes(f.pairId)) {
+                pairIds.push(f.pairId);
+            }
+        });
+        return pairIds.indexOf(edge.pairId);
+    };
+
     const rawHandles: EntityHandle[] = [];
 
+    // Sort flows by pair index for nested rectangle ordering (per-entity)
+    const sortedIncoming = [...incomingFlows].sort((a, b) => getEntityPairIndex(a.id) - getEntityPairIndex(b.id));
+    const sortedOutgoing = [...outgoingFlows].sort((a, b) => getEntityPairIndex(a.id) - getEntityPairIndex(b.id));
+
+    // Get the quadrant to determine reversal
+    const quadrant = layoutInfo?.quadrant || 'top';
+
+    // For nested rectangles, specific quadrants need specific reversals:
+    // TOP:    Neither reversed
+    // RIGHT:  OUTs reversed (incoming from process)
+    // BOTTOM: Both reversed
+    // LEFT:   OUTs reversed (incoming from process)
+    const reverseIncoming = quadrant === 'right' || quadrant === 'bottom' || quadrant === 'left'; // OUTs from process
+    const reverseOutgoing = quadrant === 'bottom';  // INs to process (only BOTTOM)
+
+    // Apply reversal for proper nesting
+    const orderedIncoming = reverseIncoming ? [...sortedIncoming].reverse() : sortedIncoming;
+    const orderedOutgoing = reverseOutgoing ? [...sortedOutgoing].reverse() : sortedOutgoing;
+
     // Incoming flows (Process → Entity) = target handles = OUT side on Entity
-    incomingFlows.forEach((flow, idx) => {
-        const count = incomingFlows.length;
+    orderedIncoming.forEach((flow, idx) => {
+        const count = orderedIncoming.length;
         const offset = count === 1 ? 50 : 20 + (idx * 60 / Math.max(1, count - 1));
         rawHandles.push({ id: flow.id, side: outSide, offset, type: 'target' });
     });
 
     // Outgoing flows (Entity → Process) = source handles = IN side on Entity
-    outgoingFlows.forEach((flow, idx) => {
-        const count = outgoingFlows.length;
+    orderedOutgoing.forEach((flow, idx) => {
+        const count = orderedOutgoing.length;
         const offset = count === 1 ? 50 : 20 + (idx * 60 / Math.max(1, count - 1));
         rawHandles.push({ id: flow.id, side: inSide, offset, type: 'source' });
     });

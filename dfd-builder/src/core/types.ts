@@ -53,6 +53,7 @@ export interface DFDEdge {
     targetHandle?: string;
     arrowDirection?: 'horizontal-first' | 'vertical-first' | 'smart'; // Auto or Manual arrow path direction
     labelOffset?: number; // Label position along path (0-1, default 0.5 for center)
+    pairId?: string; // Links IN-flow and OUT-flow pairs together
 }
 
 // Diagram Interface

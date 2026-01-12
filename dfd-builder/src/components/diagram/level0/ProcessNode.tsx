@@ -143,7 +143,7 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
         if (entry) entry.outgoing.push(flow.id);
     });
 
-    // Generate handles
+    // Generate handles with nested rectangle ordering
     interface ProcessHandle {
         id: string;
         angle: number;
@@ -153,45 +153,109 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     }
     const rawHandles: ProcessHandle[] = [];
 
+    // Helper: distribute N angles evenly within a range
     const distributeAngles = (start: number, end: number, count: number): number[] => {
         if (count === 0) return [];
         const step = (end - start) / (count + 1);
         return Array.from({ length: count }, (_, i) => start + step * (i + 1));
     };
 
-    entityLayoutMap.forEach((data) => {
-        const { layout, incoming, outgoing } = data;
+    entityLayoutMap.forEach((entityData) => {
+        const { layout, incoming, outgoing } = entityData;
+        const quadrant = layout.quadrant;
 
-        // IN-flows (Entity → Process) = target handles
-        if (incoming.length > 0) {
-            const angles = distributeAngles(layout.inFlowRange.start, layout.inFlowRange.end, incoming.length);
-            incoming.forEach((id, idx) => {
-                const edge = diagram.edges.find(e => e.id === id);
-                const angle = angles[idx] + (edge?.targetAngleOffset || 0);
-                rawHandles.push({
-                    id,
-                    angle,
-                    type: 'target',
-                    sectionStart: layout.inFlowRange.start,
-                    sectionEnd: layout.inFlowRange.end
-                });
-            });
-        }
+        // Helper: get pair index from pairId (scoped to THIS entity's flows only)
+        const getEntityPairIndex = (flowId: string): number => {
+            const edge = diagram.edges.find(e => e.id === flowId);
+            if (!edge?.pairId) return 0;
 
-        // OUT-flows (Process → Entity) = source handles
-        if (outgoing.length > 0) {
-            const angles = distributeAngles(layout.outFlowRange.start, layout.outFlowRange.end, outgoing.length);
-            outgoing.forEach((id, idx) => {
-                const edge = diagram.edges.find(e => e.id === id);
-                const angle = angles[idx] + (edge?.sourceAngleOffset || 0);
-                rawHandles.push({
-                    id,
-                    angle,
-                    type: 'source',
-                    sectionStart: layout.outFlowRange.start,
-                    sectionEnd: layout.outFlowRange.end
-                });
+            // Find unique pairIds ONLY from this entity's flows (in order they appear)
+            const entityFlowIds = [...incoming, ...outgoing];
+            const pairIds: string[] = [];
+            entityFlowIds.forEach(fid => {
+                const e = diagram.edges.find(ed => ed.id === fid);
+                if (e?.pairId && !pairIds.includes(e.pairId)) {
+                    pairIds.push(e.pairId);
+                }
             });
+            return pairIds.indexOf(edge.pairId);
+        };
+
+        // Sort flows by pair index (per-entity)
+        const sortedIncoming = [...incoming].sort((a, b) => getEntityPairIndex(a) - getEntityPairIndex(b));
+        const sortedOutgoing = [...outgoing].sort((a, b) => getEntityPairIndex(a) - getEntityPairIndex(b));
+
+        // For nested rectangles:
+        // TOP and LEFT use OUTs 1→N, INs N→1
+        // RIGHT and BOTTOM use INs 1→N, OUTs N→1
+        const useOutFirst = quadrant === 'top' || quadrant === 'left';
+
+        if (useOutFirst) {
+            // TOP/LEFT: OUTs ordered 1→N (first half), INs ordered N→1 (second half)
+            // First half: OUTs in ascending pair order
+            if (sortedOutgoing.length > 0) {
+                const angles = distributeAngles(layout.outFlowRange.start, layout.outFlowRange.end, sortedOutgoing.length);
+                sortedOutgoing.forEach((id, idx) => {
+                    const edge = diagram.edges.find(e => e.id === id);
+                    const angle = angles[idx] + (edge?.sourceAngleOffset || 0);
+                    rawHandles.push({
+                        id,
+                        angle,
+                        type: 'source',
+                        sectionStart: layout.outFlowRange.start,
+                        sectionEnd: layout.outFlowRange.end
+                    });
+                });
+            }
+            // Second half: INs in descending pair order (reverse for nesting)
+            if (sortedIncoming.length > 0) {
+                const reversedIncoming = [...sortedIncoming].reverse();
+                const angles = distributeAngles(layout.inFlowRange.start, layout.inFlowRange.end, reversedIncoming.length);
+                reversedIncoming.forEach((id, idx) => {
+                    const edge = diagram.edges.find(e => e.id === id);
+                    const angle = angles[idx] + (edge?.targetAngleOffset || 0);
+                    rawHandles.push({
+                        id,
+                        angle,
+                        type: 'target',
+                        sectionStart: layout.inFlowRange.start,
+                        sectionEnd: layout.inFlowRange.end
+                    });
+                });
+            }
+        } else {
+            // RIGHT/BOTTOM: INs ordered 1→N (first half), OUTs ordered N→1 (second half)
+            // First half: INs in ascending pair order
+            if (sortedIncoming.length > 0) {
+                const angles = distributeAngles(layout.inFlowRange.start, layout.inFlowRange.end, sortedIncoming.length);
+                sortedIncoming.forEach((id, idx) => {
+                    const edge = diagram.edges.find(e => e.id === id);
+                    const angle = angles[idx] + (edge?.targetAngleOffset || 0);
+                    rawHandles.push({
+                        id,
+                        angle,
+                        type: 'target',
+                        sectionStart: layout.inFlowRange.start,
+                        sectionEnd: layout.inFlowRange.end
+                    });
+                });
+            }
+            // Second half: OUTs in descending pair order (reverse for nesting)
+            if (sortedOutgoing.length > 0) {
+                const reversedOutgoing = [...sortedOutgoing].reverse();
+                const angles = distributeAngles(layout.outFlowRange.start, layout.outFlowRange.end, reversedOutgoing.length);
+                reversedOutgoing.forEach((id, idx) => {
+                    const edge = diagram.edges.find(e => e.id === id);
+                    const angle = angles[idx] + (edge?.sourceAngleOffset || 0);
+                    rawHandles.push({
+                        id,
+                        angle,
+                        type: 'source',
+                        sectionStart: layout.outFlowRange.start,
+                        sectionEnd: layout.outFlowRange.end
+                    });
+                });
+            }
         }
     });
 

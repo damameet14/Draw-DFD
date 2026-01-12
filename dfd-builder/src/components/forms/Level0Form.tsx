@@ -103,40 +103,57 @@ export const Level0Form = () => {
     };
 
     const handleAddFlow = () => {
-        if ((!inFlowName.trim() && !outFlowName.trim()) || !selectedEntityId || !mainProcess) return;
+        // MANDATORY: Both IN-flow and OUT-flow names are required (FlowPair rule)
+        if (!inFlowName.trim() || !outFlowName.trim() || !selectedEntityId || !mainProcess) return;
+
+        // Generate shared pairId to link the two flows
+        const pairId = `pair-${crypto.randomUUID().slice(0, 6)}`;
 
         // Add In Flow (Entity -> Process)
-        if (inFlowName.trim()) {
-            const inEdgeId = `df-${crypto.randomUUID().slice(0, 4)}`; // Generate unique ID for IN edge
-            addEdge({
-                id: inEdgeId,
-                type: 'dataflow',
-                label: inFlowName,
-                sourceNodeId: selectedEntityId,
-                targetNodeId: mainProcess.id,
-                sourceHandle: inEdgeId,
-                targetHandle: inEdgeId,
-                level: 0
-            });
-        }
+        const inEdgeId = `df-${crypto.randomUUID().slice(0, 4)}`;
+        addEdge({
+            id: inEdgeId,
+            type: 'dataflow',
+            label: inFlowName,
+            sourceNodeId: selectedEntityId,
+            targetNodeId: mainProcess.id,
+            sourceHandle: inEdgeId,
+            targetHandle: inEdgeId,
+            level: 0,
+            pairId: pairId
+        });
 
         // Add Out Flow (Process -> Entity)
-        if (outFlowName.trim()) {
-            const outEdgeId = `df-${crypto.randomUUID().slice(0, 4)}`; // Generate unique ID for OUT edge
-            addEdge({
-                id: outEdgeId,
-                type: 'dataflow',
-                label: outFlowName,
-                sourceNodeId: mainProcess.id,
-                targetNodeId: selectedEntityId,
-                sourceHandle: outEdgeId,
-                targetHandle: outEdgeId,
-                level: 0
-            });
-        }
+        const outEdgeId = `df-${crypto.randomUUID().slice(0, 4)}`;
+        addEdge({
+            id: outEdgeId,
+            type: 'dataflow',
+            label: outFlowName,
+            sourceNodeId: mainProcess.id,
+            targetNodeId: selectedEntityId,
+            sourceHandle: outEdgeId,
+            targetHandle: outEdgeId,
+            level: 0,
+            pairId: pairId
+        });
 
         setInFlowName('');
         setOutFlowName('');
+    };
+
+    // Delete both flows in a pair (no orphan flows allowed)
+    const handleDeleteFlowPair = (flowId: string) => {
+        const flow = diagram.edges.find(e => e.id === flowId);
+        if (!flow) return;
+
+        // If flow has a pairId, delete both flows in the pair
+        if (flow.pairId) {
+            const pairedFlows = diagram.edges.filter(e => e.pairId === flow.pairId);
+            pairedFlows.forEach(f => removeEdge(f.id));
+        } else {
+            // Legacy orphan flow - just delete it
+            removeEdge(flowId);
+        }
     };
 
     return (
@@ -237,10 +254,10 @@ export const Level0Form = () => {
 
                         <button
                             onClick={handleAddFlow}
-                            disabled={(!inFlowName && !outFlowName) || !selectedEntityId}
+                            disabled={!inFlowName.trim() || !outFlowName.trim() || !selectedEntityId}
                             className={styles.flowAddButton}
                         >
-                            Add Flow <ArrowRight size={16} />
+                            Add Flow Pair <ArrowRight size={16} />
                         </button>
                     </div>
 
@@ -261,7 +278,11 @@ export const Level0Form = () => {
                                             {isInput ? `From: ${source?.label}` : `To: ${target?.label}`}
                                         </div>
                                     </div>
-                                    <button onClick={() => removeEdge(flow.id)} className={styles.flowDeleteButton}>
+                                    <button
+                                        onClick={() => handleDeleteFlowPair(flow.id)}
+                                        className={styles.flowDeleteButton}
+                                        title={flow.pairId ? "Delete flow pair" : "Delete flow"}
+                                    >
                                         <Trash2 size={14} />
                                     </button>
                                 </div>
