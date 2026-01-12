@@ -5,21 +5,23 @@ import { Level1Form } from './components/forms/Level1Form';
 import { Level2Form } from './components/forms/Level2Form';
 import styles from './App.module.css';
 import { type DFDLevel } from './core/types';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Grid2x2 } from 'lucide-react';
 
 // Create context for controlling UI visibility
 export const UIVisibilityContext = createContext({
   showHandles: true,
-  showArrowButtons: true
+  showArrowButtons: true,
+  showGrid: true
 });
 
 function App() {
   const [currentLevel, setCurrentLevel] = useState<DFDLevel>(0);
   const [showHandles, setShowHandles] = useState(true);
   const [showArrowButtons, setShowArrowButtons] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
 
   return (
-    <UIVisibilityContext.Provider value={{ showHandles, showArrowButtons }}>
+    <UIVisibilityContext.Provider value={{ showHandles, showArrowButtons, showGrid }}>
       <div className={styles.appContainer}>
         {/* Level Tabs */}
         <div className={styles.tabContainer}>
@@ -59,6 +61,14 @@ function App() {
             >
               {showArrowButtons ? <Eye size={16} /> : <EyeOff size={16} />}
               <span>Arrow Buttons</span>
+            </button>
+            <button
+              className={styles.toggleButton}
+              onClick={() => setShowGrid(!showGrid)}
+              title={showGrid ? "Hide grid" : "Show grid"}
+            >
+              <Grid2x2 size={16} />
+              <span>Grid</span>
             </button>
           </div>
         </div>

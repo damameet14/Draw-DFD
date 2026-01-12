@@ -1,6 +1,7 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useContext } from 'react';
 import ReactFlow, {
     Background,
+    BackgroundVariant,
     Controls,
     type NodeTypes,
     useNodesState,
@@ -14,6 +15,7 @@ import 'reactflow/dist/style.css';
 import { useDiagramStore } from '../../store/useDiagramStore';
 import styles from './DFDCanvas.module.css';
 import { type DFDLevel } from '../../core/types';
+import { UIVisibilityContext } from '../../App';
 
 // Level 0 Components
 import { ProcessNode as L0Process } from './level0/ProcessNode';
@@ -48,6 +50,7 @@ interface DFDCanvasProps {
 
 export const DFDCanvas = ({ currentLevel }: DFDCanvasProps) => {
     const { diagram, updateNode } = useDiagramStore();
+    const { showGrid } = useContext(UIVisibilityContext);
 
     // Select types based on level
     const nodeTypes = currentLevel === 0 ? level0NodeTypes : (currentLevel === 2 ? level2NodeTypes : level1NodeTypes);
@@ -137,6 +140,8 @@ export const DFDCanvas = ({ currentLevel }: DFDCanvasProps) => {
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
                     fitView
+                    snapToGrid={true}
+                    snapGrid={[20, 20]}
                     minZoom={0.5}
                     maxZoom={1.5}
                     nodesFocusable={true}
@@ -152,7 +157,7 @@ export const DFDCanvas = ({ currentLevel }: DFDCanvasProps) => {
                         }
                     }}
                 >
-                    <Background gap={16} size={1} color="#e2e8f0" />
+                    {showGrid && <Background variant={BackgroundVariant.Lines} gap={20} size={1} color="#cbd5e1" />}
                     <Controls />
                 </ReactFlow>
             </div>
