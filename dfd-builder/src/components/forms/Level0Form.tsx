@@ -172,6 +172,31 @@ export const Level0Form = () => {
                         placeholder="e.g. Restaurant ERP"
                     />
                 </div>
+
+                {/* Process Style Controls */}
+                <div className={styles.formGroup}>
+                    <label className={styles.label}>Text Size: {mainProcess?.textSize ?? 16}px</label>
+                    <input
+                        type="range"
+                        min="10"
+                        max="24"
+                        value={mainProcess?.textSize ?? 16}
+                        onChange={(e) => mainProcess && updateNode(mainProcess.id, { textSize: parseInt(e.target.value) })}
+                        className={styles.slider}
+                    />
+                </div>
+
+                <div className={styles.formGroup}>
+                    <label className={styles.label}>Divider Position: {mainProcess?.dividerPosition ?? 15}%</label>
+                    <input
+                        type="range"
+                        min="10"
+                        max="40"
+                        value={mainProcess?.dividerPosition ?? 15}
+                        onChange={(e) => mainProcess && updateNode(mainProcess.id, { dividerPosition: parseInt(e.target.value) })}
+                        className={styles.slider}
+                    />
+                </div>
             </div>
 
             <div className={styles.content}>
@@ -262,29 +287,66 @@ export const Level0Form = () => {
                     </div>
 
                     <div className={styles.flowList}>
-                        {flows.map(flow => {
-                            const source = diagram.nodes.find(n => n.id === flow.sourceNodeId);
-                            const target = diagram.nodes.find(n => n.id === flow.targetNodeId);
-                            const isInput = target?.id === mainProcess?.id;
+                        {entities.map(entity => {
+                            // Get all flows for this entity
+                            const entityFlows = flows.filter(f =>
+                                f.sourceNodeId === entity.id || f.targetNodeId === entity.id
+                            );
+
+                            if (entityFlows.length === 0) return null;
+
+                            // Group by pair to avoid showing duplicates
+                            const pairIds = new Set<string>();
+                            const uniquePairs: { inFlow?: typeof entityFlows[0]; outFlow?: typeof entityFlows[0] }[] = [];
+
+                            entityFlows.forEach(flow => {
+                                if (flow.pairId && pairIds.has(flow.pairId)) return;
+                                if (flow.pairId) pairIds.add(flow.pairId);
+
+                                const pairedFlow = flow.pairId
+                                    ? entityFlows.find(f => f.pairId === flow.pairId && f.id !== flow.id)
+                                    : undefined;
+
+                                const isInput = flow.targetNodeId === mainProcess?.id;
+                                uniquePairs.push({
+                                    inFlow: isInput ? flow : pairedFlow,
+                                    outFlow: isInput ? pairedFlow : flow
+                                });
+                            });
 
                             return (
-                                <div key={flow.id} className={styles.flowItem}>
-                                    <div className={`${styles.flowBadge} ${isInput ? styles.flowBadgeIn : styles.flowBadgeOut}`}>
-                                        {isInput ? 'IN' : 'OUT'}
+                                <div key={entity.id} className={styles.entityFlowGroup}>
+                                    <div className={styles.entityGroupHeader}>
+                                        <span className={styles.entityGroupName}>{entity.label}</span>
+                                        <span className={styles.entityFlowCount}>{uniquePairs.length} pair{uniquePairs.length !== 1 ? 's' : ''}</span>
                                     </div>
-                                    <div className={styles.flowDetails}>
-                                        <div className={styles.flowName}>{flow.label}</div>
-                                        <div className={styles.flowSource}>
-                                            {isInput ? `From: ${source?.label}` : `To: ${target?.label}`}
-                                        </div>
+                                    <div className={styles.entityFlowItems}>
+                                        {uniquePairs.map((pair, idx) => (
+                                            <div key={pair.inFlow?.id || pair.outFlow?.id || idx} className={styles.flowPairItem}>
+                                                <div className={styles.flowPairRow}>
+                                                    {pair.inFlow && (
+                                                        <div className={styles.flowItemCompact}>
+                                                            <span className={`${styles.flowBadge} ${styles.flowBadgeIn}`}>IN</span>
+                                                            <span className={styles.flowName}>{pair.inFlow.label}</span>
+                                                        </div>
+                                                    )}
+                                                    {pair.outFlow && (
+                                                        <div className={styles.flowItemCompact}>
+                                                            <span className={`${styles.flowBadge} ${styles.flowBadgeOut}`}>OUT</span>
+                                                            <span className={styles.flowName}>{pair.outFlow.label}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => handleDeleteFlowPair(pair.inFlow?.id || pair.outFlow?.id || '')}
+                                                    className={styles.flowDeleteButton}
+                                                    title="Delete flow pair"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
                                     </div>
-                                    <button
-                                        onClick={() => handleDeleteFlowPair(flow.id)}
-                                        className={styles.flowDeleteButton}
-                                        title={flow.pairId ? "Delete flow pair" : "Delete flow"}
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
                                 </div>
                             );
                         })}

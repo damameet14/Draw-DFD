@@ -24,6 +24,8 @@ export interface ProcessNode extends DFDNodeBase {
     type: 'process';
     processNumber: string; // "0.0", "1.0", "3.2"
     diameter?: number; // Optional custom diameter (default: 200px)
+    textSize?: number; // Font size for text (default: 16 = 1rem)
+    dividerPosition?: number; // Percentage from top (default: 35)
 }
 
 export interface DataStoreNode extends DFDNodeBase {
