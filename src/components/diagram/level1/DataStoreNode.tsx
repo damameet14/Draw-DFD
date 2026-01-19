@@ -12,8 +12,8 @@ export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) 
     const nodeRef = useRef<HTMLDivElement>(null);
 
     // Default node dimensions
-    const nodeWidth = 180;
-    const nodeHeight = 60;
+    const nodeWidth = 160;
+    const nodeHeight = 50;
 
     const incomingFlows = diagram.edges.filter(e => e.targetNodeId === data.id);
     const outgoingFlows = diagram.edges.filter(e => e.sourceNodeId === data.id);
@@ -234,7 +234,6 @@ export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) 
             })}
 
             <div className={styles.storeLabel}>
-                {data.storeCode ? <span style={{ marginRight: '5px', fontWeight: 'bold' }}>{data.storeCode}</span> : null}
                 {data.label}
             </div>
         </div>

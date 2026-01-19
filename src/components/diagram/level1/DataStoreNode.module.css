@@ -4,53 +4,44 @@
     min-height: 40px;
     display: flex;
     align-items: center;
+    justify-content: center;
     position: relative;
     transition: all 0.2s;
-    background: white;
+    background: transparent;
     border-top: 2px solid #1e293b;
     border-bottom: 2px solid #1e293b;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
 }
 
 .dataStoreNode.selected {
     border-top-color: #3b82f6;
     border-bottom-color: #3b82f6;
-    background: #eff6ff;
+    background: rgba(59, 130, 246, 0.05);
 }
 
 .dataStoreNode::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 32px;
-    border-right: 2px solid #1e293b;
+    display: none;
 }
 
 .dataStoreNode.selected::before {
-    border-right-color: #3b82f6;
+    display: none;
 }
 
 .storeId {
-    width: 32px;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10;
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: #64748b;
+    display: none;
 }
 
 .storeLabel {
     flex: 1;
     text-align: center;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: 1rem;
+    font-weight: 700;
     padding: 0 0.5rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     color: #1e293b;
+    font-family: inherit;
 }
