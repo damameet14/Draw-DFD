@@ -206,7 +206,7 @@ export const DataStoreNode = ({ data, selected }: NodeProps<DataStoreNodeType>) 
         <div
             ref={nodeRef}
             className={`${styles.dataStoreNode} ${selected ? styles.selected : ''}`}
-            style={{ width: `${nodeWidth}px`, height: `${nodeHeight}px` }}
+            style={{ minWidth: `${nodeWidth}px`, height: `${nodeHeight}px`, width: 'auto' }}
         >
             {/* Dynamic handles - only on top/bottom edges */}
             {showHandles && handles.map(handle => {
