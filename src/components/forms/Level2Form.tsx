@@ -65,18 +65,17 @@ export const Level2Form = () => {
         if (!participantName.trim()) return;
 
         const id = `ext_${crypto.randomUUID().slice(0, 4)}`;
-        const yOffset = existingEntities.length * 120;
 
         let newNode: DFDNode;
         if (participantType === 'entity') {
             newNode = {
                 id, type: 'entity', label: participantName, level: 2,
-                position: { x: 100, y: 100 + yOffset }
+                position: { x: 100, y: 100 + existingEntities.length * 180 }
             } as EntityNode;
         } else {
             newNode = {
                 id, type: 'process_ref', label: participantName, level: 2,
-                position: { x: 100, y: 100 + yOffset }
+                position: { x: 100, y: 100 + existingEntities.length * 180 }
             } as ExternalProcessNode;
         }
 
@@ -89,14 +88,13 @@ export const Level2Form = () => {
 
         // Auto-numbering removed
         const storeCode = '';
-        const yOffset = existingDatastores.length * 100;
         const newNode: DataStoreNode = {
             id: `ds2-${crypto.randomUUID().slice(0, 4)}`,
             type: 'datastore',
             label: datastoreName,
             storeCode,
             level: 2,
-            position: { x: 750, y: 100 + yOffset }
+            position: { x: 1100, y: 100 + existingDatastores.length * 150 }
         };
 
         addNode(newNode);
@@ -127,14 +125,13 @@ export const Level2Form = () => {
         setSubProcesses([...subProcesses, newProcess]);
 
         // Create node
-        const yOffset = existingSubProcesses.length * 150;
         const newNode: ProcessNode = {
             id: newProcess.id,
             type: 'process',
             label: 'New Process',
             processNumber: number,
             level: 2,
-            position: { x: 450, y: 100 + yOffset }
+            position: { x: 600, y: 100 + existingSubProcesses.length * 300 }
         };
         addNode(newNode);
         setExpandedProcessId(newProcess.id);

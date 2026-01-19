@@ -49,7 +49,7 @@ interface DFDCanvasProps {
 }
 
 export const DFDCanvas = ({ currentLevel }: DFDCanvasProps) => {
-    const { diagram, updateNode } = useDiagramStore();
+    const { diagram, updateNode, handleNodeDrag } = useDiagramStore();
     const { showGrid } = useContext(UIVisibilityContext);
 
     // Select types based on level
@@ -136,6 +136,7 @@ export const DFDCanvas = ({ currentLevel }: DFDCanvasProps) => {
                     edges={edges}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
+                    onNodeDrag={(_event, node) => handleNodeDrag(node.id, node.position, currentLevel)}
                     onNodeDragStop={onNodeDragStop}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}

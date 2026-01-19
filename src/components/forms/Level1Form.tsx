@@ -55,13 +55,12 @@ export const Level1Form = () => {
     const handleAddEntity = () => {
         if (!entityName.trim()) return;
 
-        const yOffset = existingEntities.length * 120;
         const newNode: EntityNode = {
             id: `e1-${crypto.randomUUID().slice(0, 4)}`,
             type: 'entity',
             label: entityName,
             level: 1,
-            position: { x: 100, y: 100 + yOffset }
+            position: { x: 100, y: 100 + existingEntities.length * 180 }
         };
 
         addNode(newNode);
@@ -72,14 +71,13 @@ export const Level1Form = () => {
         if (!datastoreName.trim()) return;
 
         const storeCode = `D${existingDatastores.length + 1}`;
-        const yOffset = existingDatastores.length * 100;
         const newNode: DataStoreNode = {
             id: `ds1-${crypto.randomUUID().slice(0, 4)}`,
             type: 'datastore',
             label: datastoreName,
             storeCode: storeCode,
             level: 1,
-            position: { x: 750, y: 100 + yOffset }
+            position: { x: 1100, y: 100 + existingDatastores.length * 150 }
         };
 
         addNode(newNode);
@@ -103,14 +101,13 @@ export const Level1Form = () => {
         setProcesses([...processes, newProcess]);
 
         // Create process node on canvas
-        const yOffset = existingProcesses.length * 150;
         const newNode: ProcessNode = {
             id: newProcess.id,
             type: 'process',
             label: 'New Process',
             processNumber: processNumber,
             level: 1,
-            position: { x: 450, y: 100 + yOffset }
+            position: { x: 600, y: 100 + existingProcesses.length * 300 }
         };
         addNode(newNode);
 

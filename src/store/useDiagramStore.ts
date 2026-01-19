@@ -23,6 +23,8 @@ interface DiagramState {
     // High-level
     loadDiagram: (diagram: DFDDiagram) => void;
     resetDiagram: () => void;
+    handleNodeDrag: (id: string, position: { x: number; y: number }, levelOverride?: number) => void;
+    syncProcessNodesSize: (level: number, diameter: number) => void;
 }
 
 const INITIAL_DIAGRAM: DFDDiagram = {
@@ -120,5 +122,60 @@ export const useDiagramStore = create<DiagramState>((set) => ({
 
     resetDiagram: () => {
         set({ diagram: INITIAL_DIAGRAM, validationResults: [] });
+    },
+
+    handleNodeDrag: (id, position, levelOverride) => {
+        set((state) => {
+            const currentLevel = levelOverride ?? state.diagram.level;
+            const nodes = [...state.diagram.nodes];
+            const draggedNode = nodes.find(n => n.id === id);
+
+            if (!draggedNode) return state;
+
+            // Determine if coupled movement is needed
+            const isProcess = draggedNode.type === 'process';
+            const isDataStore = draggedNode.type === 'datastore';
+
+            // Check if we are in Level 1 or 2
+            if ((isProcess || isDataStore) && (currentLevel === 1 || currentLevel === 2)) {
+                // Lock X movement for all nodes of the same type in this level
+                const dx = position.x - draggedNode.position.x;
+
+                // Update ALL nodes of this type
+                const updatedNodes = nodes.map(n => {
+                    if (n.level === currentLevel && n.type === draggedNode.type) {
+                        return {
+                            ...n,
+                            position: {
+                                x: n.position.x + dx, // Move all X by delta
+                                y: n.id === id ? position.y : n.position.y // Move Y only for dragged node
+                            }
+                        };
+                    }
+                    return n;
+                });
+                return { diagram: { ...state.diagram, nodes: updatedNodes } };
+            } else {
+                // Normal drag for Entities or Level 0
+                const updatedNodes = nodes.map(n =>
+                    n.id === id ? { ...n, position } : n
+                );
+                return { diagram: { ...state.diagram, nodes: updatedNodes } };
+            }
+        });
+    },
+
+    syncProcessNodesSize: (level, diameter) => {
+        set((state) => {
+            const nodes = state.diagram.nodes.map(n => {
+                if (n.level === level && n.type === 'process') {
+                    // Update diameter for all process nodes in this level
+                    // Use type casting or spread to handle the specific property
+                    return { ...n, diameter } as DFDNode;
+                }
+                return n;
+            });
+            return { diagram: { ...state.diagram, nodes } };
+        });
     }
 }));

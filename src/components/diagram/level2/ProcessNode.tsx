@@ -268,7 +268,10 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     // Handle resize event
     const onResize = (_event: any, params: any) => {
         const newDiameter = Math.round(Math.max(params.width, params.height));
-        updateNode(data.id, { diameter: newDiameter });
+        // Sync size across all process nodes in this level
+        diagram.nodes.filter(n => n.level === data.level && n.type === 'process').length > 1
+            ? useDiagramStore.getState().syncProcessNodesSize(data.level, newDiameter)
+            : updateNode(data.id, { diameter: newDiameter });
     };
 
     return (
