@@ -319,8 +319,26 @@ export const ProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
             })}
 
             <div className={styles.processCircle}>
-                <div className={styles.processLabel}>{data.processNumber}</div>
-                <div className={styles.processName}>{data.label}</div>
+                <div
+                    className={styles.processHeader}
+                    style={{ paddingTop: `${data.dividerPosition ?? 15}%` }}
+                >
+                    <span
+                        className={styles.processNumber}
+                        style={{ fontSize: `${(data.textSize ?? 16) / 16}rem` }}
+                    >
+                        {data.processNumber}
+                    </span>
+                </div>
+                <div className={styles.processDivider}></div>
+                <div className={styles.processBody}>
+                    <span
+                        className={styles.processName}
+                        style={{ fontSize: `${(data.textSize ?? 16) / 16}rem` }}
+                    >
+                        {data.label}
+                    </span>
+                </div>
             </div>
         </div>
     );

@@ -149,34 +149,19 @@ export const CustomOrthogonalEdge: FC<EdgeProps> = ({
         });
 
         // Calculate label position for Manual
+        // RULE: Labels should ALWAYS be on horizontal segments
         if (currentDirection === 'horizontal-first') {
-            const horizontalLength = Math.abs(targetX - sourceX);
-            const verticalLength = Math.abs(targetY - sourceY);
-            const totalLength = horizontalLength + verticalLength;
-            const offsetDistance = totalLength * labelOffset;
-
-            if (offsetDistance <= horizontalLength) {
-                labelX = sourceX + (targetX - sourceX) * (offsetDistance / horizontalLength);
-                labelY = sourceY;
-            } else {
-                labelX = targetX;
-                const verticalOffset = offsetDistance - horizontalLength;
-                labelY = sourceY + (targetY - sourceY) * (verticalOffset / verticalLength);
-            }
+            // Horizontal segment is first: place label on horizontal segment
+            // Always position label on the horizontal segment (at labelOffset along it)
+            const labelPosition = Math.min(labelOffset, 0.9); // Cap at 90% to stay on horizontal
+            labelX = sourceX + (targetX - sourceX) * labelPosition;
+            labelY = sourceY; // Always on horizontal line
         } else {
-            const verticalLength = Math.abs(targetY - sourceY);
-            const horizontalLength = Math.abs(targetX - sourceX);
-            const totalLength = verticalLength + horizontalLength;
-            const offsetDistance = totalLength * labelOffset;
-
-            if (offsetDistance <= verticalLength) {
-                labelX = sourceX;
-                labelY = sourceY + (targetY - sourceY) * (offsetDistance / verticalLength);
-            } else {
-                const horizontalOffset = offsetDistance - verticalLength;
-                labelX = sourceX + (targetX - sourceX) * (horizontalOffset / horizontalLength);
-                labelY = targetY;
-            }
+            // Vertical-first: horizontal segment is second
+            // Place label on the horizontal segment (the second segment)
+            const labelPosition = labelOffset;
+            labelX = sourceX + (targetX - sourceX) * labelPosition;
+            labelY = targetY; // On the horizontal segment at the end
         }
     }
 
