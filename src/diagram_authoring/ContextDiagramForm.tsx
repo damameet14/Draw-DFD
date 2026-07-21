@@ -1,0 +1,358 @@
+import { useState, useEffect } from 'react';
+import { Plus, Trash2, ArrowRight } from 'lucide-react';
+import { useDiagramStore } from '../diagram_state/public_interface';
+import { type EntityNode, type ProcessNode } from '../data_flow_diagram_model/public_interface';
+import styles from './ContextDiagramForm.module.css';
+
+export const ContextDiagramForm = () => {
+    const { diagram, addNode, updateNode, removeNode, addEdge, removeEdge, setDiagramName } = useDiagramStore();
+
+    const [entityName, setEntityName] = useState('');
+    const [inFlowName, setInFlowName] = useState('');
+    const [outFlowName, setOutFlowName] = useState('');
+    const [selectedEntityId, setSelectedEntityId] = useState<string>('');
+
+    // Ensure Process 0.0 exists
+    useEffect(() => {
+        const process00 = diagram.nodes.find(n => n.type === 'process' && (n as ProcessNode).processNumber === '0.0');
+        if (!process00) {
+            const mainProcess: ProcessNode = {
+                id: 'p-0.0',
+                type: 'process',
+                label: 'System',
+                processNumber: '0.0',
+                level: 0,
+                position: { x: 450, y: 350 }
+            };
+            addNode(mainProcess);
+        }
+    }, [diagram.nodes, addNode]);
+
+    const mainProcess = diagram.nodes.find(n => n.type === 'process' && (n as ProcessNode).processNumber === '0.0') as ProcessNode | undefined;
+    const entities = diagram.nodes.filter(n => n.type === 'entity' && n.level === 0);
+    const flows = diagram.edges.filter(e => e.level === 0);
+
+    const handleSystemNameChange = (name: string) => {
+        if (mainProcess) {
+            updateNode(mainProcess.id, { label: name });
+            setDiagramName(name);
+        }
+    };
+
+    const handleAddEntity = () => {
+        if (!entityName.trim()) return;
+
+        // Process center on canvas
+        const PROCESS_CENTER = { x: 450, y: 350 };
+        const ENTITY_DISTANCE = 280; // Distance from process center to entity center
+        const ENTITY_SIZE = 120;
+
+        // Calculate the entity's index and which quadrant it belongs to
+        const entityIndex = entities.length;
+        const quadrantIndex = entityIndex % 4;
+        const entitiesInQuadrantBefore = Math.floor(entityIndex / 4);
+
+        // Count total entities that will be in each quadrant after this one is added
+        const totalAfter = entityIndex + 1;
+        const entitiesPerQuadrant: number[] = [0, 0, 0, 0];
+        for (let i = 0; i < totalAfter; i++) {
+            entitiesPerQuadrant[i % 4]++;
+        }
+
+        const entitiesInThisQuadrant = entitiesPerQuadrant[quadrantIndex];
+        const sectionSize = 90 / entitiesInThisQuadrant;
+
+        // Quadrant start angles (0° at 12 o'clock)
+        // RIGHT: 0-90, BOTTOM: 90-180, LEFT: 180-270, TOP: 270-360
+        const quadrantStarts = [270, 0, 90, 180]; // TOP, RIGHT, BOTTOM, LEFT
+        const S_q = quadrantStarts[quadrantIndex];
+
+        // k = index of this entity within its quadrant (0-based)
+        const k = entitiesInQuadrantBefore;
+
+        // Calculate section based on quadrant
+        // TOP/BOTTOM: first entity at END of quadrant (near 360° and 180°)
+        // RIGHT/LEFT: first entity at START of quadrant (near 0° and 180°)
+        let sectionCenter: number;
+        if (quadrantIndex === 0 || quadrantIndex === 2) {
+            // TOP or BOTTOM: k=0 at end
+            sectionCenter = S_q + 90 - (k + 0.5) * sectionSize;
+        } else {
+            // RIGHT or LEFT: k=0 at start
+            sectionCenter = S_q + (k + 0.5) * sectionSize;
+        }
+
+        // Convert angle to canvas position
+        // 0° at 12 o'clock, clockwise: angle 0 = top, 90 = right, 180 = bottom, 270 = left
+        const angleRad = (sectionCenter - 90) * (Math.PI / 180);
+        const x = PROCESS_CENTER.x + ENTITY_DISTANCE * Math.cos(angleRad) - ENTITY_SIZE / 2;
+        const y = PROCESS_CENTER.y + ENTITY_DISTANCE * Math.sin(angleRad) - ENTITY_SIZE / 2;
+
+        const position = { x: Math.round(x), y: Math.round(y) };
+
+        const newNode: EntityNode = {
+            id: `e-${crypto.randomUUID().slice(0, 4)}`,
+            type: 'entity',
+            label: entityName,
+            level: 0,
+            position: position
+        };
+
+        addNode(newNode);
+        setEntityName('');
+    };
+
+    const handleAddFlow = () => {
+        // MANDATORY: Both IN-flow and OUT-flow names are required (FlowPair rule)
+        if (!inFlowName.trim() || !outFlowName.trim() || !selectedEntityId || !mainProcess) return;
+
+        // Generate shared pairId to link the two flows
+        const pairId = `pair-${crypto.randomUUID().slice(0, 6)}`;
+
+        // Add In Flow (Entity -> Process)
+        const inEdgeId = `df-${crypto.randomUUID().slice(0, 4)}`;
+        addEdge({
+            id: inEdgeId,
+            type: 'dataflow',
+            label: inFlowName,
+            sourceNodeId: selectedEntityId,
+            targetNodeId: mainProcess.id,
+            sourceHandle: inEdgeId,
+            targetHandle: inEdgeId,
+            level: 0,
+            pairId: pairId
+        });
+
+        // Add Out Flow (Process -> Entity)
+        const outEdgeId = `df-${crypto.randomUUID().slice(0, 4)}`;
+        addEdge({
+            id: outEdgeId,
+            type: 'dataflow',
+            label: outFlowName,
+            sourceNodeId: mainProcess.id,
+            targetNodeId: selectedEntityId,
+            sourceHandle: outEdgeId,
+            targetHandle: outEdgeId,
+            level: 0,
+            pairId: pairId
+        });
+
+        setInFlowName('');
+        setOutFlowName('');
+    };
+
+    // Delete both flows in a pair (no orphan flows allowed)
+    const handleDeleteFlowPair = (flowId: string) => {
+        const flow = diagram.edges.find(e => e.id === flowId);
+        if (!flow) return;
+
+        // If flow has a pairId, delete both flows in the pair
+        if (flow.pairId) {
+            const pairedFlows = diagram.edges.filter(e => e.pairId === flow.pairId);
+            pairedFlows.forEach(f => removeEdge(f.id));
+        } else {
+            // Legacy orphan flow - just delete it
+            removeEdge(flowId);
+        }
+    };
+
+    return (
+        <div className={styles.sidebar}>
+            <div className={styles.header}>
+                <h2 className={styles.title}>Level 0: Context</h2>
+                <p className={styles.subtitle}>Define the system boundary and external interactions.</p>
+
+                <div className={styles.formGroup}>
+                    <label className={styles.label}>System Name</label>
+                    <input
+                        type="text"
+                        className={styles.input}
+                        value={mainProcess?.label || ''}
+                        onChange={(e) => handleSystemNameChange(e.target.value)}
+                        placeholder="e.g. Restaurant ERP"
+                    />
+                </div>
+
+                {/* Process Style Controls */}
+                <div className={styles.formGroup}>
+                    <label className={styles.label}>Text Size: {mainProcess?.textSize ?? 16}px</label>
+                    <input
+                        type="range"
+                        min="10"
+                        max="24"
+                        value={mainProcess?.textSize ?? 16}
+                        onChange={(e) => mainProcess && updateNode(mainProcess.id, { textSize: parseInt(e.target.value) })}
+                        className={styles.slider}
+                    />
+                </div>
+
+                <div className={styles.formGroup}>
+                    <label className={styles.label}>Divider Position: {mainProcess?.dividerPosition ?? 15}%</label>
+                    <input
+                        type="range"
+                        min="10"
+                        max="40"
+                        value={mainProcess?.dividerPosition ?? 15}
+                        onChange={(e) => mainProcess && updateNode(mainProcess.id, { dividerPosition: parseInt(e.target.value) })}
+                        className={styles.slider}
+                    />
+                </div>
+            </div>
+
+            <div className={styles.content}>
+                <section className={styles.section}>
+                    <h3 className={styles.sectionTitle}>
+                        <span className={`${styles.badge} ${styles.badgeGreen}`}></span>
+                        1. External Entities
+                    </h3>
+                    <div className={styles.inputRow}>
+                        <input
+                            type="text"
+                            value={entityName}
+                            onChange={(e) => setEntityName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddEntity()}
+                            placeholder="Entity Name (e.g. User)"
+                            className={styles.inputFlex}
+                        />
+                        <button onClick={handleAddEntity} className={styles.addButton}>
+                            <Plus size={18} />
+                        </button>
+                    </div>
+
+                    <ul className={styles.list}>
+                        {entities.map(entity => (
+                            <li key={entity.id} className={styles.listItem}>
+                                <span>{entity.label}</span>
+                                <button onClick={() => removeNode(entity.id)} className={styles.deleteButton}>
+                                    <Trash2 size={16} />
+                                </button>
+                            </li>
+                        ))}
+                        {entities.length === 0 && <p className={styles.emptyState}>No entities added yet.</p>}
+                    </ul>
+                </section>
+
+                <section className={styles.section}>
+                    <h3 className={styles.sectionTitle}>
+                        <span className={`${styles.badge} ${styles.badgeBlue}`}></span>
+                        2. Data Flows
+                    </h3>
+
+                    <div className={styles.flowBox}>
+                        <div className={styles.flowSelects}>
+                            <select
+                                value={selectedEntityId}
+                                onChange={(e) => setSelectedEntityId(e.target.value)}
+                                className={styles.flowSelectLarge}
+                                style={{ width: '100%', marginBottom: '10px' }}
+                            >
+                                <option value="">Select Entity...</option>
+                                {entities.map(e => (
+                                    <option key={e.id} value={e.id}>{e.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* IN FLOW INPUT */}
+                        <div className={styles.flowInputGroup}>
+                            <label className={styles.flowLabel}>In Flow (From Entity)</label>
+                            <input
+                                type="text"
+                                value={inFlowName}
+                                onChange={(e) => setInFlowName(e.target.value)}
+                                placeholder="e.g. Request"
+                                className={styles.flowInput}
+                            />
+                        </div>
+
+                        {/* OUT FLOW INPUT */}
+                        <div className={styles.flowInputGroup}>
+                            <label className={styles.flowLabel}>Out Flow (To Entity)</label>
+                            <input
+                                type="text"
+                                value={outFlowName}
+                                onChange={(e) => setOutFlowName(e.target.value)}
+                                placeholder="e.g. Response"
+                                className={styles.flowInput}
+                            />
+                        </div>
+
+                        <button
+                            onClick={handleAddFlow}
+                            disabled={!inFlowName.trim() || !outFlowName.trim() || !selectedEntityId}
+                            className={styles.flowAddButton}
+                        >
+                            Add Flow Pair <ArrowRight size={16} />
+                        </button>
+                    </div>
+
+                    <div className={styles.flowList}>
+                        {entities.map(entity => {
+                            // Get all flows for this entity
+                            const entityFlows = flows.filter(f =>
+                                f.sourceNodeId === entity.id || f.targetNodeId === entity.id
+                            );
+
+                            if (entityFlows.length === 0) return null;
+
+                            // Group by pair to avoid showing duplicates
+                            const pairIds = new Set<string>();
+                            const uniquePairs: { inFlow?: typeof entityFlows[0]; outFlow?: typeof entityFlows[0] }[] = [];
+
+                            entityFlows.forEach(flow => {
+                                if (flow.pairId && pairIds.has(flow.pairId)) return;
+                                if (flow.pairId) pairIds.add(flow.pairId);
+
+                                const pairedFlow = flow.pairId
+                                    ? entityFlows.find(f => f.pairId === flow.pairId && f.id !== flow.id)
+                                    : undefined;
+
+                                const isInput = flow.targetNodeId === mainProcess?.id;
+                                uniquePairs.push({
+                                    inFlow: isInput ? flow : pairedFlow,
+                                    outFlow: isInput ? pairedFlow : flow
+                                });
+                            });
+
+                            return (
+                                <div key={entity.id} className={styles.entityFlowGroup}>
+                                    <div className={styles.entityGroupHeader}>
+                                        <span className={styles.entityGroupName}>{entity.label}</span>
+                                        <span className={styles.entityFlowCount}>{uniquePairs.length} pair{uniquePairs.length !== 1 ? 's' : ''}</span>
+                                    </div>
+                                    <div className={styles.entityFlowItems}>
+                                        {uniquePairs.map((pair, idx) => (
+                                            <div key={pair.inFlow?.id || pair.outFlow?.id || idx} className={styles.flowPairItem}>
+                                                <div className={styles.flowPairRow}>
+                                                    {pair.inFlow && (
+                                                        <div className={styles.flowItemCompact}>
+                                                            <span className={`${styles.flowBadge} ${styles.flowBadgeIn}`}>IN</span>
+                                                            <span className={styles.flowName}>{pair.inFlow.label}</span>
+                                                        </div>
+                                                    )}
+                                                    {pair.outFlow && (
+                                                        <div className={styles.flowItemCompact}>
+                                                            <span className={`${styles.flowBadge} ${styles.flowBadgeOut}`}>OUT</span>
+                                                            <span className={styles.flowName}>{pair.outFlow.label}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => handleDeleteFlowPair(pair.inFlow?.id || pair.outFlow?.id || '')}
+                                                    className={styles.flowDeleteButton}
+                                                    title="Delete flow pair"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+            </div>
+        </div>
+    );
+};

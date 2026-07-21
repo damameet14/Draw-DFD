@@ -20,8 +20,33 @@ Draw-DFD is a modern, interactive web-based tool aimed at simplifying the creati
 *   **Build Tool:** Vite
 *   **Diagramming Library:** React Flow (v11)
 *   **State Management:** Zustand
-*   **Styling:** CSS Modules / PostCSS
+*   **Styling:** CSS Modules
 *   **Icons:** Lucide React
+*   **Testing:** Vitest
+
+## 📂 Project Structure
+
+`src/` is organized by business capability. Each module owns a `MODULE.md`
+describing its responsibilities and a `public_interface.ts` that other modules
+import from — never reach into a module's internal files.
+
+```text
+src/
+├── application_shell/         # App root, level tabs, visibility preferences
+├── data_flow_diagram_model/   # Shared DFD contracts (nodes, edges, diagram)
+├── diagram_validation/        # DFD rule set and display filtering
+├── diagram_state/             # Zustand store and derived validation
+├── diagram_canvas/            # React Flow canvas and node/edge renderers
+│   ├── process_node/
+│   ├── entity_node/
+│   ├── data_store_node/
+│   └── data_flow_edge/
+└── diagram_authoring/         # One authoring form per DFD level
+```
+
+Canvas renderers come in two sets, not three: `Context*` for Level 0, and
+`Decomposed*` shared by Levels 1 and 2, which differ only at runtime via each
+node's `level` field.
 
 ## 📦 Installation
 
@@ -42,6 +67,12 @@ Draw-DFD is a modern, interactive web-based tool aimed at simplifying the creati
     ```
 
 4.  **Open your browser** and navigate to `http://localhost:5173` (or the port shown in your terminal).
+
+## ✅ Running Tests
+
+```bash
+npm test
+```
 
 ## 🔧 Building for Production
 

@@ -1,10 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
+import DataFlowDiagramApplication from './application_shell/public_interface'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <DataFlowDiagramApplication />
   </StrictMode>,
 )
