@@ -5,30 +5,46 @@ import { type EntityNode, type ProcessNode } from '../data_flow_diagram_model/pu
 import styles from './ContextDiagramForm.module.css';
 
 export const ContextDiagramForm = () => {
-    const { diagram, addNode, updateNode, removeNode, addEdge, removeEdge, setDiagramName } = useDiagramStore();
+    const diagram = useDiagramStore((state) => state.diagram);
+    const addNode = useDiagramStore((state) => state.addNode);
+    const updateNode = useDiagramStore((state) => state.updateNode);
+    const removeNode = useDiagramStore((state) => state.removeNode);
+    const addEdge = useDiagramStore((state) => state.addEdge);
+    const removeEdge = useDiagramStore((state) => state.removeEdge);
+    const setDiagramName = useDiagramStore((state) => state.setDiagramName);
 
     const [entityName, setEntityName] = useState('');
     const [inFlowName, setInFlowName] = useState('');
     const [outFlowName, setOutFlowName] = useState('');
     const [selectedEntityId, setSelectedEntityId] = useState<string>('');
 
-    // Ensure Process 0.0 exists
+    // Ensure Process 0.0 exists.
+    //
+    // The existence check reads the store directly rather than the `diagram`
+    // captured by this render: StrictMode runs an effect twice against the same
+    // closure, which with a stale snapshot would add a second node under the
+    // same `p-0.0` id.
     useEffect(() => {
-        const process00 = diagram.nodes.find(n => n.type === 'process' && (n as ProcessNode).processNumber === '0.0');
-        if (!process00) {
-            const mainProcess: ProcessNode = {
-                id: 'p-0.0',
-                type: 'process',
-                label: 'System',
-                processNumber: '0.0',
-                level: 0,
-                position: { x: 450, y: 350 }
-            };
-            addNode(mainProcess);
-        }
+        const currentNodes = useDiagramStore.getState().diagram.nodes;
+        const contextProcessExists = currentNodes.some(
+            n => n.type === 'process' && n.level === 0 && n.processNumber === '0.0'
+        );
+        if (contextProcessExists) return;
+
+        const mainProcess: ProcessNode = {
+            id: 'p-0.0',
+            type: 'process',
+            label: 'System',
+            processNumber: '0.0',
+            level: 0,
+            position: { x: 450, y: 350 }
+        };
+        addNode(mainProcess);
     }, [diagram.nodes, addNode]);
 
-    const mainProcess = diagram.nodes.find(n => n.type === 'process' && (n as ProcessNode).processNumber === '0.0') as ProcessNode | undefined;
+    const mainProcess = diagram.nodes.find(
+        (n): n is ProcessNode => n.type === 'process' && n.level === 0 && n.processNumber === '0.0'
+    );
     const entities = diagram.nodes.filter(n => n.type === 'entity' && n.level === 0);
     const flows = diagram.edges.filter(e => e.level === 0);
 

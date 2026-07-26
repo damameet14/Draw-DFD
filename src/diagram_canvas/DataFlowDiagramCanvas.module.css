@@ -32,10 +32,6 @@
     stroke-width: 2;
 }
 
-.canvasWrapper :global(.react-flow__arrowhead) {
-    fill: #1e293b;
-}
-
 .canvasWrapper :global(.react-flow__edge) {
     pointer-events: all;
 }
@@ -43,4 +39,62 @@
 .canvasWrapper :global(.react-flow__edge-text) {
     font-size: 12px;
     font-weight: 600;
+}
+
+/* ===== Validation affordances =====
+ *
+ * These classes are set on the React Flow node wrapper by the canvas, so a
+ * finding can be drawn without every node renderer having to know about
+ * validation. The glow uses `filter: drop-shadow`, which follows the rendered
+ * shape's alpha and so traces process circles rather than their bounding box.
+ */
+
+.nodeHasError {
+    filter: drop-shadow(0 0 3px rgba(220, 38, 38, 0.85));
+}
+
+.nodeHasWarning {
+    filter: drop-shadow(0 0 3px rgba(217, 119, 6, 0.85));
+}
+
+.nodeFocused {
+    filter: drop-shadow(0 0 7px rgba(59, 130, 246, 1));
+}
+
+.nodeHasError::after,
+.nodeHasWarning::after {
+    position: absolute;
+    top: -9px;
+    right: -9px;
+    z-index: 20;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid #ffffff;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+/* A process is drawn as a circle, so the corner of its bounding box is empty
+ * space; inset the badge to keep it touching the shape. */
+.nodeHasError:global(.react-flow__node-process)::after,
+.nodeHasWarning:global(.react-flow__node-process)::after {
+    top: 11%;
+    right: 11%;
+}
+
+.nodeHasError::after {
+    content: '!';
+    background: #dc2626;
+}
+
+.nodeHasWarning::after {
+    content: '!';
+    background: #d97706;
 }

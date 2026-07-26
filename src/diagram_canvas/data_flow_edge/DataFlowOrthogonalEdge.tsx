@@ -17,7 +17,10 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
     style,
     selected // Capture selected prop
 }) => {
-    const { diagram, updateEdge } = useDiagramStore();
+    // Subscribing to just this one edge keeps a keystroke anywhere in the
+    // diagram from re-rendering every edge on the canvas.
+    const edge = useDiagramStore((state) => state.diagram.edges.find(e => e.id === id));
+    const updateEdge = useDiagramStore((state) => state.updateEdge);
     const { areArrowDirectionButtonsVisible } = useDiagramVisibilityPreferences();
     const [isLabelSelected, setIsLabelSelected] = useState(false);
 
@@ -32,9 +35,7 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
     // Marker Style for selection - modifying markerEnd is complex inside the component as it expects an ID string
     // We'll stick to highlighting the path for now.
 
-    // Get the actual edge from the store
-    const edge = diagram.edges.find(e => e.id === id);
-    const storedDirection = edge?.arrowDirection as 'horizontal-first' | 'vertical-first' | 'smart' | undefined;
+    const storedDirection = edge?.arrowDirection;
     const labelOffset = edge?.labelOffset ?? 0.5;
 
     let currentDirection: 'horizontal-first' | 'vertical-first' | 'smart' = 'horizontal-first';
@@ -77,7 +78,8 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
 
         if (points.length >= 2) {
             let totalLen = 0;
-            const pathSegments: { len: number, p1: any, p2: any }[] = [];
+            type PathPoint = { x: number; y: number };
+            const pathSegments: { len: number, p1: PathPoint, p2: PathPoint }[] = [];
 
             for (let i = 0; i < points.length - 1; i++) {
                 const p1 = points[i];
@@ -89,7 +91,7 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
                 totalLen += len;
             }
 
-            let targetLen = totalLen * labelOffset;
+            const targetLen = totalLen * labelOffset;
             let currentLen = 0;
 
             // Default center fallback

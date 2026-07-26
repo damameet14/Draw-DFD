@@ -11,25 +11,23 @@ import {
  * This is a presentation concern deliberately kept separate from the rules
  * themselves in `validateDataFlowDiagram`.
  *
- * KNOWN ISSUE: the D-001 branch below unconditionally drops the "exactly one
- * process" finding whenever the diagram has one process, including on Level 1
- * and Level 2 where D-001 is never raised in the first place. The original
- * comment claimed the underlying rule "incorrectly triggers sometimes". The
- * suppression is preserved here to keep behavior unchanged during the module
- * restructure; the underlying rule should be diagnosed separately.
+ * Expects a diagram already narrowed to one level by `projectDiagramToLevel`.
+ *
+ * This used to also drop D-001 ("Level 0 must contain exactly one process")
+ * whenever the diagram held exactly one process, to paper over the rule firing
+ * on levels it does not apply to. That was a symptom of validating all three
+ * levels at once: D-001 counted processes across every level and compared them
+ * against a `diagram.level` that was always 0. With the diagram narrowed to one
+ * level first, D-001 only fires when the level-0 process count is not one, so
+ * the suppression could never match a real finding and has been removed.
  */
 export function filterValidationResultsForDisplay(
     validationResults: ValidationResult[],
     diagram: DFDDiagram
 ): ValidationResult[] {
     const hasAnyDataFlow = diagram.edges.length > 0;
-    const processNodeCount = diagram.nodes.filter(node => node.type === 'process').length;
 
     return validationResults.filter(validationResult => {
-        if (validationResult.ruleCode === 'D-001' && processNodeCount === 1) {
-            return false;
-        }
-
         // On a diagram with no flows yet, show only errors that are actionable
         // without any connections having been drawn.
         if (!hasAnyDataFlow) {

@@ -1,16 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Grid2x2 } from 'lucide-react';
-import { DataFlowDiagramCanvas } from '../diagram_canvas/public_interface';
+import { DataFlowDiagramCanvas, DiagramCanvasProvider } from '../diagram_canvas/public_interface';
 import {
     ContextDiagramForm,
     ProcessDecompositionForm,
     SubProcessDecompositionForm,
 } from '../diagram_authoring/public_interface';
+import { useDiagramValidationResults } from '../diagram_state/public_interface';
+import { useDiagramAutosave } from '../diagram_persistence/public_interface';
 import { type DFDLevel } from '../data_flow_diagram_model/public_interface';
 import {
     DiagramVisibilityPreferencesProvider,
     useDiagramVisibilityPreferences,
 } from './diagramVisibilityPreferences';
+import { ValidationFindingsPanel } from './ValidationFindingsPanel';
+import { DiagramDocumentActions } from './DiagramDocumentActions';
 import styles from './DataFlowDiagramApplication.module.css';
 
 const AUTHORING_FORM_BY_LEVEL: Record<DFDLevel, () => React.ReactElement> = {
@@ -74,31 +78,56 @@ function DiagramVisibilityToggles() {
  */
 function DataFlowDiagramApplication() {
     const [currentLevel, setCurrentLevel] = useState<DFDLevel>(0);
+    const [focusedElementId, setFocusedElementId] = useState<string | null>(null);
     const AuthoringFormForCurrentLevel = AUTHORING_FORM_BY_LEVEL[currentLevel];
+
+    // Findings are computed once here and shared, so the canvas highlighting and
+    // the panel listing cannot disagree about what is wrong.
+    const validationFindings = useDiagramValidationResults(currentLevel);
+
+    // Restores the last session's diagram, then keeps it saved as it changes.
+    useDiagramAutosave();
+
+    // A focused element belongs to the level it was found on.
+    useEffect(() => setFocusedElementId(null), [currentLevel]);
 
     return (
         <DiagramVisibilityPreferencesProvider>
-            <div className={styles.appContainer}>
-                <div className={styles.tabContainer}>
-                    {LEVEL_TAB_LABELS.map(({ level, label }) => (
-                        <button
-                            key={level}
-                            className={`${styles.tab} ${currentLevel === level ? styles.tabActive : ''}`}
-                            onClick={() => setCurrentLevel(level)}
-                        >
-                            {label}
-                        </button>
-                    ))}
+            {/* Wraps the toolbar as well as the canvas, so the PNG export can
+                read live node positions from the canvas instance. */}
+            <DiagramCanvasProvider>
+                <div className={styles.appContainer}>
+                    <div className={styles.tabContainer}>
+                        {LEVEL_TAB_LABELS.map(({ level, label }) => (
+                            <button
+                                key={level}
+                                className={`${styles.tab} ${currentLevel === level ? styles.tabActive : ''}`}
+                                onClick={() => setCurrentLevel(level)}
+                            >
+                                {label}
+                            </button>
+                        ))}
 
-                    <DiagramVisibilityToggles />
+                        <DiagramVisibilityToggles />
+                        <DiagramDocumentActions />
+                    </div>
+
+                    <AuthoringFormForCurrentLevel />
+
+                    <main className={styles.mainContent}>
+                        <DataFlowDiagramCanvas
+                            currentLevel={currentLevel}
+                            validationFindings={validationFindings}
+                            focusedElementId={focusedElementId}
+                        />
+                        <ValidationFindingsPanel
+                            findings={validationFindings}
+                            focusedElementId={focusedElementId}
+                            onFocusElement={setFocusedElementId}
+                        />
+                    </main>
                 </div>
-
-                <AuthoringFormForCurrentLevel />
-
-                <main className={styles.mainContent}>
-                    <DataFlowDiagramCanvas currentLevel={currentLevel} />
-                </main>
-            </div>
+            </DiagramCanvasProvider>
         </DiagramVisibilityPreferencesProvider>
     );
 }

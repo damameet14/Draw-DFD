@@ -1,0 +1,84 @@
+.actionGroup {
+    position: relative;
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* Matches the breakpoint in DataFlowDiagramApplication.module.css: the whole
+   top bar drops to icons together rather than one group at a time. */
+@media (max-width: 1150px) {
+    .actionButton span {
+        display: none;
+    }
+}
+
+.actionButton {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: none;
+    background: white;
+    color: #4b5563;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    white-space: nowrap;
+}
+
+.actionButton:hover:not(:disabled) {
+    background: #f3f4f6;
+    color: #1f2937;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.actionButton:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+/* Transient result of the last action, anchored under the button row. */
+.status {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    z-index: 120;
+    max-width: 22rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 0.5rem;
+    border: 1px solid;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.35;
+    box-shadow: 0 6px 10px -2px rgba(0, 0, 0, 0.2);
+    animation: statusSlideIn 0.2s ease;
+}
+
+.statusSuccess {
+    background: #f0fdf4;
+    border-color: #86efac;
+    color: #15803d;
+}
+
+.statusError {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+
+@keyframes statusSlideIn {
+    from {
+        transform: translateY(-0.25rem);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}

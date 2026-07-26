@@ -8,6 +8,7 @@ import {
 import { validateDataFlowDiagram } from '../validateDataFlowDiagram';
 import { filterValidationResultsForDisplay } from '../filterValidationResultsForDisplay';
 import { collectDisplayableValidationResults } from '../collectDisplayableValidationResults';
+import { projectDiagramToLevel } from '../projectDiagramToLevel';
 
 function buildDiagram(
     level: DFDLevel,
@@ -206,17 +207,105 @@ describe('validateDataFlowDiagram — level rules', () => {
     });
 });
 
+describe('projectDiagramToLevel', () => {
+    it('keeps only the nodes and edges belonging to the requested level', () => {
+        const diagram = buildDiagram(
+            0,
+            [buildProcess('p0', '0.0', 0), buildProcess('p1', '1.0', 1), buildDataStore('d1', 'D1', 1)],
+            [buildFlow('f0', 'p0', 'p0', 0), buildFlow('f1', 'p1', 'd1', 1)]
+        );
+
+        const levelOne = projectDiagramToLevel(diagram, 1);
+
+        expect(levelOne.level).toBe(1);
+        expect(levelOne.nodes.map(n => n.id)).toEqual(['p1', 'd1']);
+        expect(levelOne.edges.map(e => e.id)).toEqual(['f1']);
+    });
+
+    it('leaves the diagram it projects untouched', () => {
+        const diagram = buildDiagram(0, [buildProcess('p0', '0.0', 0), buildProcess('p1', '1.0', 1)]);
+        const snapshot = JSON.stringify(diagram);
+        projectDiagramToLevel(diagram, 1);
+        expect(JSON.stringify(diagram)).toBe(snapshot);
+    });
+});
+
+describe('collectDisplayableValidationResults — level scoping', () => {
+    it('does not count other levels\' processes towards the Level 0 process rule', () => {
+        // One context process, plus three Level 1 processes decomposing it. The
+        // Level 0 diagram is valid; counting all eight nodes at once was not.
+        const diagram = buildDiagram(
+            0,
+            [
+                buildProcess('p0', '0.0', 0),
+                buildEntity('e0', 0),
+                buildProcess('p1', '1.0', 1),
+                buildProcess('p2', '2.0', 1),
+                buildProcess('p3', '3.0', 1),
+            ],
+            [buildFlow('f0', 'e0', 'p0', 0), buildFlow('f1', 'p0', 'e0', 0)]
+        );
+
+        expect(collectDisplayableValidationResults(diagram, 0).map(r => r.ruleCode)).not.toContain('D-001');
+    });
+
+    it('does not report Level 1 data stores as forbidden Level 0 data stores', () => {
+        const diagram = buildDiagram(
+            0,
+            [buildProcess('p0', '0.0', 0), buildEntity('e0', 0), buildDataStore('d1', 'D1', 1)],
+            [buildFlow('f0', 'e0', 'p0', 0), buildFlow('f1', 'p0', 'e0', 0)]
+        );
+
+        expect(collectDisplayableValidationResults(diagram, 0).map(r => r.ruleCode)).not.toContain('D-002');
+    });
+
+    it('still reports a data store actually placed on Level 0', () => {
+        const diagram = buildDiagram(
+            0,
+            [buildProcess('p0', '0.0', 0), buildEntity('e0', 0), buildDataStore('d1', 'D1', 0)],
+            [buildFlow('f0', 'e0', 'p0', 0), buildFlow('f1', 'p0', 'e0', 0)]
+        );
+
+        expect(collectDisplayableValidationResults(diagram, 0).map(r => r.ruleCode)).toContain('D-002');
+    });
+
+    it('applies Level 1 numbering rules when asked for Level 1', () => {
+        const diagram = buildDiagram(
+            0,
+            [buildProcess('p0', '0.0', 0), buildProcess('p1', '1.1', 1), buildEntity('e1', 1)],
+            [buildFlow('f1', 'e1', 'p1', 1)]
+        );
+
+        expect(collectDisplayableValidationResults(diagram, 1).map(r => r.ruleCode)).toContain('L1-001');
+    });
+
+    it('reports flows on the requested level only', () => {
+        const diagram = buildDiagram(
+            0,
+            [buildEntity('e0', 0), buildProcess('p0', '0.0', 0), buildEntity('e1', 1), buildProcess('p1', '1.0', 1)],
+            [buildFlow('f0', 'e0', 'p0', 0, ''), buildFlow('f1', 'e1', 'p1', 1, 'named')]
+        );
+
+        const levelZeroEdgeIds = collectDisplayableValidationResults(diagram, 0)
+            .filter(r => r.edgeId)
+            .map(r => r.edgeId);
+
+        expect(levelZeroEdgeIds).toContain('f0');
+        expect(levelZeroEdgeIds).not.toContain('f1');
+    });
+});
+
 describe('filterValidationResultsForDisplay', () => {
     it('suppresses warnings while the diagram has no flows', () => {
         const diagram = buildDiagram(0, [buildProcess('p1', '0.0'), buildEntity('e1')]);
-        const displayed = collectDisplayableValidationResults(diagram);
+        const displayed = collectDisplayableValidationResults(diagram, 0);
         expect(displayed.every(result => result.severity === 'error')).toBe(true);
         expect(displayed.map(r => r.ruleCode)).not.toContain('N-004');
     });
 
     it('suppresses P-001 and P-002 until at least one flow exists', () => {
         const diagram = buildDiagram(0, [buildProcess('p1', '0.0')]);
-        const codes = collectDisplayableValidationResults(diagram).map(r => r.ruleCode);
+        const codes = collectDisplayableValidationResults(diagram, 0).map(r => r.ruleCode);
         expect(codes).not.toContain('P-001');
         expect(codes).not.toContain('P-002');
     });
@@ -227,35 +316,38 @@ describe('filterValidationResultsForDisplay', () => {
             [buildProcess('p1', '0.0'), buildEntity('e1')],
             [buildFlow('f1', 'p1', 'e1')]
         );
-        expect(collectDisplayableValidationResults(diagram).map(r => r.ruleCode)).toContain('P-001');
+        expect(collectDisplayableValidationResults(diagram, 0).map(r => r.ruleCode)).toContain('P-001');
     });
 
-    it('drops D-001 whenever exactly one process exists (documents the known suppression)', () => {
+    it('no longer needs the D-001 suppression: one Level 0 process simply does not raise it', () => {
         const diagram = buildDiagram(
             0,
             [buildProcess('p1', '0.0'), buildEntity('e1')],
             [buildFlow('f1', 'e1', 'p1')]
         );
-        expect(collectDisplayableValidationResults(diagram).map(r => r.ruleCode)).not.toContain('D-001');
+        const rawCodes = validateDataFlowDiagram(projectDiagramToLevel(diagram, 0)).map(r => r.ruleCode);
+        expect(rawCodes).not.toContain('D-001');
+        expect(collectDisplayableValidationResults(diagram, 0).map(r => r.ruleCode)).not.toContain('D-001');
     });
 
-    it('keeps D-001 when the process count is not one', () => {
+    it('keeps D-001 when the Level 0 process count is not one', () => {
         const diagram = buildDiagram(
             0,
             [buildProcess('p1', '0.0'), buildProcess('p2', '0.0'), buildEntity('e1')],
             [buildFlow('f1', 'e1', 'p1'), buildFlow('f2', 'p1', 'e1')]
         );
-        expect(collectDisplayableValidationResults(diagram).map(r => r.ruleCode)).toContain('D-001');
+        expect(collectDisplayableValidationResults(diagram, 0).map(r => r.ruleCode)).toContain('D-001');
     });
 
-    it('composes validate-then-filter identically to calling both steps by hand', () => {
+    it('composes project-validate-filter identically to calling the steps by hand', () => {
         const diagram = buildDiagram(
             1,
             [buildProcess('p1', '1.0', 1), buildDataStore('d1', 'D1', 1)],
             [buildFlow('f1', 'p1', 'd1', 1)]
         );
-        const byHand = filterValidationResultsForDisplay(validateDataFlowDiagram(diagram), diagram);
-        const composed = collectDisplayableValidationResults(diagram);
+        const projected = projectDiagramToLevel(diagram, 1);
+        const byHand = filterValidationResultsForDisplay(validateDataFlowDiagram(projected), projected);
+        const composed = collectDisplayableValidationResults(diagram, 1);
         expect(composed.map(r => r.ruleCode)).toEqual(byHand.map(r => r.ruleCode));
     });
 });

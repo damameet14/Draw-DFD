@@ -1,43 +1,47 @@
 import { useState } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useDiagramStore } from '../diagram_state/public_interface';
-import { type EntityNode, type ProcessNode, type DataStoreNode, type ExternalProcessNode, type DFDNode } from '../data_flow_diagram_model/public_interface';
+import {
+    type DFDNode,
+    type DataStoreNode,
+    type EntityNode,
+    type ExternalProcessNode,
+    type ProcessNode,
+} from '../data_flow_diagram_model/public_interface';
+import {
+    createFlowEdgeId,
+    createInteractionPairId,
+    deriveProcessAuthoringModels,
+    selectDataStores,
+    selectFlowParticipants,
+    type FlowParticipantNode,
+    type ProcessAuthoringModel,
+    type ProcessFlowDirection,
+} from './deriveProcessAuthoringModel';
 import styles from './DecompositionForm.module.css';
 
-interface FlowDefinition {
-    id: string;
-    targetId: string;
-    label: string;
-}
+const LEVEL = 2;
 
-interface DatastoreInteraction {
-    id: string;
-    datastoreId: string;
-    inLabel: string;
-    outLabel: string;
-}
-
-interface SubProcessFlow {
-    id: string;
-    targetProcessId: string;
-    direction: 'to' | 'from';
-    label: string;
-}
-
-interface SubProcessDefinition {
-    id: string;
-    number: string;
-    name: string;
-    entityInputs: FlowDefinition[];
-    entityOutputs: FlowDefinition[];
-    datastoreInteractions: DatastoreInteraction[];
-    subProcessFlows: SubProcessFlow[];
-}
-
+/**
+ * Level 2 authoring: the sub-processes of one parent process, plus the
+ * participants, data stores, and flows they involve.
+ *
+ * Sub-process numbers and data store codes are entered by hand here rather than
+ * allocated, because a Level 2 diagram inherits its numbering from its parent
+ * (a decomposition of 3.0 numbers its children 3.1, 3.2, ...).
+ *
+ * Like the Level 1 form, the displayed lists are derived from the store; only
+ * in-progress input text is local.
+ */
 export const SubProcessDecompositionForm = () => {
-    const { diagram, addNode, removeNode, addEdge, removeEdge, setDiagramName } = useDiagramStore();
+    const diagram = useDiagramStore((state) => state.diagram);
+    const addNode = useDiagramStore((state) => state.addNode);
+    const updateNode = useDiagramStore((state) => state.updateNode);
+    const removeNode = useDiagramStore((state) => state.removeNode);
+    const addEdge = useDiagramStore((state) => state.addEdge);
+    const removeEdge = useDiagramStore((state) => state.removeEdge);
+    const setDiagramName = useDiagramStore((state) => state.setDiagramName);
 
-    // --- State ---
     const [parentProcessNumber, setParentProcessNumber] = useState('');
     const [parentProcessName, setParentProcessName] = useState('');
 
@@ -45,39 +49,32 @@ export const SubProcessDecompositionForm = () => {
     const [participantType, setParticipantType] = useState<'entity' | 'process_ref'>('entity');
     const [datastoreName, setDatastoreName] = useState('');
 
-    const [subProcesses, setSubProcesses] = useState<SubProcessDefinition[]>([]);
     const [expandedProcessId, setExpandedProcessId] = useState<string | null>(null);
 
-    // Filter Level 2 nodes
-    const level2Nodes = diagram.nodes.filter(n => n.level === 2);
-    const existingEntities = level2Nodes.filter(n => n.type === 'entity' || n.type === 'process_ref') as (EntityNode | ExternalProcessNode)[];
-    const existingDatastores = level2Nodes.filter(n => n.type === 'datastore') as DataStoreNode[];
-    const existingSubProcesses = level2Nodes.filter(n => n.type === 'process') as ProcessNode[];
+    const existingParticipants = selectFlowParticipants(diagram, LEVEL);
+    const existingDatastores = selectDataStores(diagram, LEVEL);
+    const processModels = deriveProcessAuthoringModels(diagram, LEVEL);
 
     // --- Actions: Global ---
 
     const handleUpdateTitle = () => {
-        const name = `Level 2 - ${parentProcessNumber} ${parentProcessName}`;
-        setDiagramName(name);
+        setDiagramName(`Level 2 - ${parentProcessNumber} ${parentProcessName}`);
     };
 
     const handleAddParticipant = () => {
         if (!participantName.trim()) return;
 
-        const id = `ext_${crypto.randomUUID().slice(0, 4)}`;
+        const shared = {
+            id: `ext_${crypto.randomUUID().slice(0, 4)}`,
+            label: participantName,
+            level: LEVEL,
+            position: { x: 100, y: 100 + existingParticipants.length * 180 },
+        } as const;
 
-        let newNode: DFDNode;
-        if (participantType === 'entity') {
-            newNode = {
-                id, type: 'entity', label: participantName, level: 2,
-                position: { x: 100, y: 100 + existingEntities.length * 180 }
-            } as EntityNode;
-        } else {
-            newNode = {
-                id, type: 'process_ref', label: participantName, level: 2,
-                position: { x: 100, y: 100 + existingEntities.length * 180 }
-            } as ExternalProcessNode;
-        }
+        const newNode: DFDNode =
+            participantType === 'entity'
+                ? ({ ...shared, type: 'entity' } satisfies EntityNode)
+                : ({ ...shared, type: 'process_ref' } satisfies ExternalProcessNode);
 
         addNode(newNode);
         setParticipantName('');
@@ -86,166 +83,99 @@ export const SubProcessDecompositionForm = () => {
     const handleAddDatastore = () => {
         if (!datastoreName.trim()) return;
 
-        // Auto-numbering removed
-        const storeCode = '';
         const newNode: DataStoreNode = {
             id: `ds2-${crypto.randomUUID().slice(0, 4)}`,
             type: 'datastore',
             label: datastoreName,
-            storeCode,
-            level: 2,
-            position: { x: 1100, y: 100 + existingDatastores.length * 150 }
+            // Level 2 store codes are inherited from the parent diagram, so they
+            // are typed in rather than allocated.
+            storeCode: '',
+            level: LEVEL,
+            position: { x: 1100, y: 100 + existingDatastores.length * 150 },
         };
 
         addNode(newNode);
         setDatastoreName('');
     };
 
-    const handleUpdateDatastoreCode = (id: string, code: string) => {
-        const node = diagram.nodes.find(n => n.id === id) as DataStoreNode;
-        if (node) addNode({ ...node, storeCode: code });
-    };
-
     // --- Actions: Sub-Processes ---
 
     const handleAddSubProcess = () => {
-        // Auto-numbering removed per request
-        const number = '';
-
-        const newProcess: SubProcessDefinition = {
+        const newProcess: ProcessNode = {
             id: `sp_${crypto.randomUUID().slice(0, 4)}`,
-            number,
-            name: '',
-            entityInputs: [],
-            entityOutputs: [],
-            datastoreInteractions: [],
-            subProcessFlows: []
-        };
-
-        setSubProcesses([...subProcesses, newProcess]);
-
-        // Create node
-        const newNode: ProcessNode = {
-            id: newProcess.id,
             type: 'process',
             label: 'New Process',
-            processNumber: number,
-            level: 2,
-            position: { x: 600, y: 100 + existingSubProcesses.length * 300 }
+            processNumber: '',
+            level: LEVEL,
+            position: { x: 600, y: 100 + processModels.length * 300 },
         };
-        addNode(newNode);
+
+        addNode(newProcess);
         setExpandedProcessId(newProcess.id);
     };
 
-    const handleUpdateSubProcessName = (id: string, name: string) => {
-        setSubProcesses(subProcesses.map(p => p.id === id ? { ...p, name } : p));
-        const node = diagram.nodes.find(n => n.id === id);
-        if (node) addNode({ ...node, label: name || 'New Process' });
-    };
+    // --- Actions: Flows ---
 
-    const handleUpdateSubProcessNumber = (id: string, number: string) => {
-        setSubProcesses(subProcesses.map(p => p.id === id ? { ...p, number } : p));
-        const node = diagram.nodes.find(n => n.id === id);
-        if (node) addNode({ ...node, processNumber: number } as ProcessNode);
-    };
-
-    const handleDeleteSubProcess = (id: string) => {
-        const edges = diagram.edges.filter(e => e.sourceNodeId === id || e.targetNodeId === id);
-        edges.forEach(e => removeEdge(e.id));
-        removeNode(id);
-        setSubProcesses(subProcesses.filter(p => p.id !== id));
-    };
-
-    // --- Actions: Flows (Generic) ---
-
-    // 1. Entity/Participant Flows
-    const handleAddEntityInput = (processId: string, entityId: string, label: string) => {
-        if (!entityId || !label.trim()) return;
-        const flowId = `flow-${crypto.randomUUID().slice(0, 4)}`;
-
-        // Update local state (optional, if we want to track it in subProcesses array, but we rely on diagram state mostly?)
-        // The original Level 1 form kept local state in sync. Let's try to mimic that for UI consistency.
-        setSubProcesses(subProcesses.map(p => p.id === processId ? {
-            ...p, entityInputs: [...p.entityInputs, { id: flowId, targetId: entityId, label }]
-        } : p));
+    const handleAddParticipantFlow = (
+        processId: string,
+        participantId: string,
+        label: string,
+        direction: 'input' | 'output'
+    ) => {
+        if (!participantId || !label.trim()) return;
 
         addEdge({
-            id: flowId, type: 'dataflow', label, sourceNodeId: entityId, targetNodeId: processId, level: 2
+            id: createFlowEdgeId(),
+            type: 'dataflow',
+            label,
+            sourceNodeId: direction === 'input' ? participantId : processId,
+            targetNodeId: direction === 'input' ? processId : participantId,
+            level: LEVEL,
         });
     };
 
-    const handleAddEntityOutput = (processId: string, entityId: string, label: string) => {
-        if (!entityId || !label.trim()) return;
-        const flowId = `flow-${crypto.randomUUID().slice(0, 4)}`;
+    /**
+     * Level 2 records reads and writes independently, so an interaction may
+     * carry only one of the two edges.
+     */
+    const handleAddDataStoreFlow = (
+        processId: string,
+        dataStoreId: string,
+        label: string,
+        direction: 'read' | 'write'
+    ) => {
+        if (!dataStoreId || !label.trim()) return;
 
-        setSubProcesses(subProcesses.map(p => p.id === processId ? {
-            ...p, entityOutputs: [...p.entityOutputs, { id: flowId, targetId: entityId, label }]
-        } : p));
+        const pairId = createInteractionPairId();
 
         addEdge({
-            id: flowId, type: 'dataflow', label, sourceNodeId: processId, targetNodeId: entityId, level: 2
+            id: direction === 'read' ? `${pairId}-in` : `${pairId}-out`,
+            type: 'dataflow',
+            label,
+            sourceNodeId: direction === 'read' ? dataStoreId : processId,
+            targetNodeId: direction === 'read' ? processId : dataStoreId,
+            level: LEVEL,
+            pairId,
         });
     };
 
-    const handleDeleteEntityFlow = (processId: string, flowId: string, type: 'input' | 'output') => {
-        removeEdge(flowId);
-        setSubProcesses(subProcesses.map(p => p.id === processId ? {
-            ...p,
-            entityInputs: type === 'input' ? p.entityInputs.filter(f => f.id !== flowId) : p.entityInputs,
-            entityOutputs: type === 'output' ? p.entityOutputs.filter(f => f.id !== flowId) : p.entityOutputs
-        } : p));
-    };
-
-    // 2. Datastore Interactions
-    const handleAddDsInteraction = (processId: string, dsId: string, inLabel: string, outLabel: string) => {
-        if (!dsId || (!inLabel.trim() && !outLabel.trim())) return; // Require at least one label
-        const intId = `int-${crypto.randomUUID().slice(0, 4)}`;
-
-        setSubProcesses(subProcesses.map(p => p.id === processId ? {
-            ...p, datastoreInteractions: [...p.datastoreInteractions, { id: intId, datastoreId: dsId, inLabel, outLabel }]
-        } : p));
-
-        if (inLabel.trim()) {
-            addEdge({ id: `${intId}-in`, type: 'dataflow', label: inLabel, sourceNodeId: dsId, targetNodeId: processId, level: 2 });
-        }
-        if (outLabel.trim()) {
-            addEdge({ id: `${intId}-out`, type: 'dataflow', label: outLabel, sourceNodeId: processId, targetNodeId: dsId, level: 2 });
-        }
-    };
-
-    const handleDeleteDsInteraction = (processId: string, intId: string) => {
-        // Try removing both potential edges
-        removeEdge(`${intId}-in`);
-        removeEdge(`${intId}-out`);
-        setSubProcesses(subProcesses.map(p => p.id === processId ? {
-            ...p, datastoreInteractions: p.datastoreInteractions.filter(i => i.id !== intId)
-        } : p));
-    };
-
-    // 3. Sub-Process Flows
-    const handleAddSubProcessFlow = (processId: string, targetId: string, direction: 'to' | 'from', label: string) => {
-        if (!targetId || !label.trim()) return;
-        const flowId = `flow-${crypto.randomUUID().slice(0, 4)}`;
-
-        setSubProcesses(subProcesses.map(p => p.id === processId ? {
-            ...p, subProcessFlows: [...p.subProcessFlows, { id: flowId, targetProcessId: targetId, direction, label }]
-        } : p));
+    const handleAddSubProcessFlow = (
+        processId: string,
+        targetProcessId: string,
+        direction: ProcessFlowDirection,
+        label: string
+    ) => {
+        if (!targetProcessId || !label.trim()) return;
 
         addEdge({
-            id: flowId, type: 'dataflow', label,
-            sourceNodeId: direction === 'to' ? processId : targetId,
-            targetNodeId: direction === 'to' ? targetId : processId,
-            level: 2
+            id: createFlowEdgeId(),
+            type: 'dataflow',
+            label,
+            sourceNodeId: direction === 'to' ? processId : targetProcessId,
+            targetNodeId: direction === 'to' ? targetProcessId : processId,
+            level: LEVEL,
         });
     };
-
-    const handleDeleteSubProcessFlow = (processId: string, flowId: string) => {
-        removeEdge(flowId);
-        setSubProcesses(subProcesses.map(p => p.id === processId ? {
-            ...p, subProcessFlows: p.subProcessFlows.filter(f => f.id !== flowId)
-        } : p));
-    };
-
 
     return (
         <div className={styles.sidebar}>
@@ -287,7 +217,7 @@ export const SubProcessDecompositionForm = () => {
                     <div className={styles.inputRow}>
                         <select
                             value={participantType}
-                            onChange={(e) => setParticipantType(e.target.value as any)}
+                            onChange={(e) => setParticipantType(e.target.value as 'entity' | 'process_ref')}
                             className={styles.flowSelectSmall}
                             style={{ width: '80px' }}
                         >
@@ -305,7 +235,7 @@ export const SubProcessDecompositionForm = () => {
                         <button onClick={handleAddParticipant} className={styles.addButton}><Plus size={18} /></button>
                     </div>
                     <ul className={styles.list}>
-                        {existingEntities.map(p => (
+                        {existingParticipants.map(p => (
                             <li key={p.id} className={styles.listItem}>
                                 <span style={{ fontSize: '0.8em', color: '#64748b', marginRight: '6px' }}>
                                     [{p.type === 'process_ref' ? 'REF' : 'ENT'}]
@@ -337,7 +267,7 @@ export const SubProcessDecompositionForm = () => {
                                 <input
                                     type="text"
                                     value={ds.storeCode || ''}
-                                    onChange={(e) => handleUpdateDatastoreCode(ds.id, e.target.value)}
+                                    onChange={(e) => updateNode(ds.id, { storeCode: e.target.value })}
                                     placeholder="ID"
                                     className={styles.flowInput}
                                     style={{ width: '40px', marginRight: '6px', textAlign: 'center' }}
@@ -358,71 +288,85 @@ export const SubProcessDecompositionForm = () => {
                         </button>
                     </div>
 
-                    {subProcesses.map(process => (
+                    {processModels.map(model => (
                         <SubProcessAccordion
-                            key={process.id}
-                            process={process}
-                            isExpanded={expandedProcessId === process.id}
-                            onToggle={() => setExpandedProcessId(expandedProcessId === process.id ? null : process.id)}
-                            onUpdateName={(name) => handleUpdateSubProcessName(process.id, name)}
-                            onUpdateNumber={(num) => handleUpdateSubProcessNumber(process.id, num)}
-                            onDelete={() => handleDeleteSubProcess(process.id)}
-                            participants={existingEntities}
+                            key={model.process.id}
+                            model={model}
+                            isExpanded={expandedProcessId === model.process.id}
+                            onToggle={() => setExpandedProcessId(
+                                expandedProcessId === model.process.id ? null : model.process.id
+                            )}
+                            onUpdateName={(name) => updateNode(model.process.id, { label: name })}
+                            onUpdateNumber={(num) => updateNode(model.process.id, { processNumber: num })}
+                            onDelete={() => removeNode(model.process.id)}
+                            participants={existingParticipants}
                             datastores={existingDatastores}
-                            otherProcesses={existingSubProcesses.filter(p => p.id !== process.id)}
-                            onAddEntityInput={(id, label) => handleAddEntityInput(process.id, id, label)}
-                            onAddEntityOutput={(id, label) => handleAddEntityOutput(process.id, id, label)}
-                            onDeleteEntityFlow={(fid, type) => handleDeleteEntityFlow(process.id, fid, type)}
-                            onAddDsInteraction={(dsId, inL, outL) => handleAddDsInteraction(process.id, dsId, inL, outL)}
-                            onDeleteDsInteraction={(iid) => handleDeleteDsInteraction(process.id, iid)}
-                            onAddSubProcessFlow={(tid, dir, lab) => handleAddSubProcessFlow(process.id, tid, dir, lab)}
-                            onDeleteSubProcessFlow={(fid) => handleDeleteSubProcessFlow(process.id, fid)}
+                            otherProcesses={processModels
+                                .map(other => other.process)
+                                .filter(other => other.id !== model.process.id)}
+                            onAddParticipantInput={(id, label) =>
+                                handleAddParticipantFlow(model.process.id, id, label, 'input')}
+                            onAddParticipantOutput={(id, label) =>
+                                handleAddParticipantFlow(model.process.id, id, label, 'output')}
+                            onAddDataStoreRead={(dsId, label) =>
+                                handleAddDataStoreFlow(model.process.id, dsId, label, 'read')}
+                            onAddDataStoreWrite={(dsId, label) =>
+                                handleAddDataStoreFlow(model.process.id, dsId, label, 'write')}
+                            onAddSubProcessFlow={(tid, dir, label) =>
+                                handleAddSubProcessFlow(model.process.id, tid, dir, label)}
+                            onDeleteFlow={removeEdge}
                         />
                     ))}
+
+                    {processModels.length === 0 && (
+                        <p className={styles.emptyState}>No sub-processes added yet. Click "+ Add Process" to begin.</p>
+                    )}
                 </section>
             </div>
         </div>
     );
 };
 
-// --- Helper Component: SubProcessAccordion (Similar to Level 1 but types adapted) ---
+// --- Helper Component: SubProcessAccordion ---
+
 interface AccordionProps {
-    process: SubProcessDefinition;
+    model: ProcessAuthoringModel;
     isExpanded: boolean;
     onToggle: () => void;
     onUpdateName: (name: string) => void;
     onUpdateNumber: (number: string) => void;
     onDelete: () => void;
-    participants: (EntityNode | ExternalProcessNode)[];
+    participants: FlowParticipantNode[];
     datastores: DataStoreNode[];
     otherProcesses: ProcessNode[];
-    onAddEntityInput: (id: string, label: string) => void;
-    onAddEntityOutput: (id: string, label: string) => void;
-    onDeleteEntityFlow: (flowId: string, type: 'input' | 'output') => void;
-    onAddDsInteraction: (dsId: string, inLabel: string, outLabel: string) => void;
-    onDeleteDsInteraction: (intId: string) => void;
-    onAddSubProcessFlow: (targetId: string, dir: 'to' | 'from', label: string) => void;
-    onDeleteSubProcessFlow: (flowId: string) => void;
+    onAddParticipantInput: (id: string, label: string) => void;
+    onAddParticipantOutput: (id: string, label: string) => void;
+    onAddDataStoreRead: (dataStoreId: string, label: string) => void;
+    onAddDataStoreWrite: (dataStoreId: string, label: string) => void;
+    onAddSubProcessFlow: (targetId: string, dir: ProcessFlowDirection, label: string) => void;
+    onDeleteFlow: (edgeId: string) => void;
 }
 
 const SubProcessAccordion = ({
-    process, isExpanded, onToggle, onUpdateName, onUpdateNumber, onDelete,
+    model, isExpanded, onToggle, onUpdateName, onUpdateNumber, onDelete,
     participants, datastores, otherProcesses,
-    onAddEntityInput, onAddEntityOutput, onDeleteEntityFlow,
-    onAddDsInteraction, onDeleteDsInteraction,
-    onAddSubProcessFlow, onDeleteSubProcessFlow
+    onAddParticipantInput, onAddParticipantOutput,
+    onAddDataStoreRead, onAddDataStoreWrite,
+    onAddSubProcessFlow, onDeleteFlow,
 }: AccordionProps) => {
 
-    // Local inputs for adding flows
+    // Each add-flow row keeps its own draft. The read and write rows previously
+    // shared one data store field, so choosing a store in one changed the other.
     const [inputState, setInputState] = useState({
         entInId: '', entInLabel: '',
         entOutId: '', entOutLabel: '',
-        dsId: '', dsIn: '', dsOut: '',
-        procId: '', procDir: 'to' as 'to' | 'from', procLabel: ''
+        dsReadId: '', dsReadLabel: '',
+        dsWriteId: '', dsWriteLabel: '',
+        procId: '', procDir: 'to' as ProcessFlowDirection, procLabel: '',
     });
 
-    const totalFlows = process.entityInputs.length + process.entityOutputs.length +
-        process.datastoreInteractions.length + process.subProcessFlows.length;
+    const dataStoreReads = model.dataStoreInteractions.filter(i => !!i.readEdgeId);
+    const dataStoreWrites = model.dataStoreInteractions.filter(i => !!i.writeEdgeId);
 
     return (
         <div className={styles.accordion}>
@@ -433,27 +377,28 @@ const SubProcessAccordion = ({
                 <div className={styles.accordionTitle}>
                     <input
                         type="text"
-                        value={process.number}
+                        value={model.process.processNumber}
                         onChange={e => onUpdateNumber(e.target.value)}
-                        className={styles.processNumberInput} // New class needed or inline style
+                        placeholder="3.1"
+                        className={styles.processNumberInput}
                         style={{ width: '40px', fontWeight: 'bold', marginRight: '8px', border: '1px solid #ccc', borderRadius: '4px', padding: '2px 4px' }}
                     />
                     <input
                         type="text"
-                        value={process.name}
+                        value={model.process.label}
                         onChange={e => onUpdateName(e.target.value)}
                         onClick={e => e.stopPropagation()}
                         className={styles.processNameInput}
                         placeholder="Name..."
                     />
                 </div>
-                <span className={styles.flowCount}>{totalFlows} flows</span>
+                <span className={styles.flowCount}>{model.totalFlowCount} flows</span>
                 <button onClick={onDelete} className={styles.deleteButton}><Trash2 size={16} /></button>
             </div>
 
             {isExpanded && (
                 <div className={styles.accordionBody}>
-                    {/* Entity Inputs */}
+                    {/* Participant Inputs */}
                     <div className={styles.flowSection}>
                         <h4 className={styles.flowSectionTitle}>Participant Inputs</h4>
                         <div className={styles.flowForm}>
@@ -463,21 +408,21 @@ const SubProcessAccordion = ({
                             </select>
                             <input type="text" placeholder="Label" value={inputState.entInLabel} onChange={e => setInputState({ ...inputState, entInLabel: e.target.value })} className={styles.flowInput} />
                             <button onClick={() => {
-                                onAddEntityInput(inputState.entInId, inputState.entInLabel);
+                                onAddParticipantInput(inputState.entInId, inputState.entInLabel);
                                 setInputState({ ...inputState, entInId: '', entInLabel: '' });
                             }} className={styles.addFlowButton}><Plus size={16} /></button>
                         </div>
                         <ul className={styles.flowList}>
-                            {process.entityInputs.map(f => (
-                                <li key={f.id} className={styles.flowItem}>
-                                    <span>{participants.find(p => p.id === f.targetId)?.label} → {f.label}</span>
-                                    <button onClick={() => onDeleteEntityFlow(f.id, 'input')} className={styles.deleteButton}><Trash2 size={14} /></button>
+                            {model.participantInputs.map(f => (
+                                <li key={f.edgeId} className={styles.flowItem}>
+                                    <span>{participants.find(p => p.id === f.participantId)?.label} → {f.label}</span>
+                                    <button onClick={() => onDeleteFlow(f.edgeId)} className={styles.deleteButton}><Trash2 size={14} /></button>
                                 </li>
                             ))}
                         </ul>
                     </div>
 
-                    {/* Entity Outputs */}
+                    {/* Participant Outputs */}
                     <div className={styles.flowSection}>
                         <h4 className={styles.flowSectionTitle}>Participant Outputs</h4>
                         <div className={styles.flowForm}>
@@ -487,40 +432,39 @@ const SubProcessAccordion = ({
                             </select>
                             <input type="text" placeholder="Label" value={inputState.entOutLabel} onChange={e => setInputState({ ...inputState, entOutLabel: e.target.value })} className={styles.flowInput} />
                             <button onClick={() => {
-                                onAddEntityOutput(inputState.entOutId, inputState.entOutLabel);
+                                onAddParticipantOutput(inputState.entOutId, inputState.entOutLabel);
                                 setInputState({ ...inputState, entOutId: '', entOutLabel: '' });
                             }} className={styles.addFlowButton}><Plus size={16} /></button>
                         </div>
                         <ul className={styles.flowList}>
-                            {process.entityOutputs.map(f => (
-                                <li key={f.id} className={styles.flowItem}>
-                                    <span>{f.label} → {participants.find(p => p.id === f.targetId)?.label}</span>
-                                    <button onClick={() => onDeleteEntityFlow(f.id, 'output')} className={styles.deleteButton}><Trash2 size={14} /></button>
+                            {model.participantOutputs.map(f => (
+                                <li key={f.edgeId} className={styles.flowItem}>
+                                    <span>{f.label} → {participants.find(p => p.id === f.participantId)?.label}</span>
+                                    <button onClick={() => onDeleteFlow(f.edgeId)} className={styles.deleteButton}><Trash2 size={14} /></button>
                                 </li>
                             ))}
                         </ul>
                     </div>
 
-
                     {/* Datastore Inputs (Reading from DS) */}
                     <div className={styles.flowSection}>
                         <h4 className={styles.flowSectionTitle}>Data Store Inputs (Read)</h4>
                         <div className={styles.flowForm}>
-                            <select value={inputState.dsId} onChange={e => setInputState({ ...inputState, dsId: e.target.value })} className={styles.flowSelect}>
+                            <select value={inputState.dsReadId} onChange={e => setInputState({ ...inputState, dsReadId: e.target.value })} className={styles.flowSelect}>
                                 <option value="">Select Data Store...</option>
                                 {datastores.map(ds => <option key={ds.id} value={ds.id}>{ds.storeCode} {ds.label}</option>)}
                             </select>
-                            <input type="text" placeholder="Label" value={inputState.dsIn} onChange={e => setInputState({ ...inputState, dsIn: e.target.value })} className={styles.flowInput} />
+                            <input type="text" placeholder="Label" value={inputState.dsReadLabel} onChange={e => setInputState({ ...inputState, dsReadLabel: e.target.value })} className={styles.flowInput} />
                             <button onClick={() => {
-                                onAddDsInteraction(inputState.dsId, inputState.dsIn, ""); // Only IN label
-                                setInputState({ ...inputState, dsId: '', dsIn: '' });
+                                onAddDataStoreRead(inputState.dsReadId, inputState.dsReadLabel);
+                                setInputState({ ...inputState, dsReadId: '', dsReadLabel: '' });
                             }} className={styles.addFlowButton}><Plus size={16} /></button>
                         </div>
                         <ul className={styles.flowList}>
-                            {process.datastoreInteractions.filter(i => !!i.inLabel).map(i => (
-                                <li key={`${i.id}-in`} className={styles.flowItem}>
-                                    <span>← {datastores.find(d => d.id === i.datastoreId)?.storeCode}: {i.inLabel}</span>
-                                    <button onClick={() => onDeleteDsInteraction(i.id)} className={styles.deleteButton}><Trash2 size={14} /></button>
+                            {dataStoreReads.map(i => (
+                                <li key={i.readEdgeId} className={styles.flowItem}>
+                                    <span>← {datastores.find(d => d.id === i.dataStoreId)?.storeCode}: {i.readLabel}</span>
+                                    <button onClick={() => onDeleteFlow(i.readEdgeId!)} className={styles.deleteButton}><Trash2 size={14} /></button>
                                 </li>
                             ))}
                         </ul>
@@ -530,21 +474,21 @@ const SubProcessAccordion = ({
                     <div className={styles.flowSection}>
                         <h4 className={styles.flowSectionTitle}>Data Store Outputs (Write)</h4>
                         <div className={styles.flowForm}>
-                            <select value={inputState.dsId} onChange={e => setInputState({ ...inputState, dsId: e.target.value })} className={styles.flowSelect}>
+                            <select value={inputState.dsWriteId} onChange={e => setInputState({ ...inputState, dsWriteId: e.target.value })} className={styles.flowSelect}>
                                 <option value="">Select Data Store...</option>
                                 {datastores.map(ds => <option key={ds.id} value={ds.id}>{ds.storeCode} {ds.label}</option>)}
                             </select>
-                            <input type="text" placeholder="Label" value={inputState.dsOut} onChange={e => setInputState({ ...inputState, dsOut: e.target.value })} className={styles.flowInput} />
+                            <input type="text" placeholder="Label" value={inputState.dsWriteLabel} onChange={e => setInputState({ ...inputState, dsWriteLabel: e.target.value })} className={styles.flowInput} />
                             <button onClick={() => {
-                                onAddDsInteraction(inputState.dsId, "", inputState.dsOut); // Only OUT label
-                                setInputState({ ...inputState, dsId: '', dsOut: '' });
+                                onAddDataStoreWrite(inputState.dsWriteId, inputState.dsWriteLabel);
+                                setInputState({ ...inputState, dsWriteId: '', dsWriteLabel: '' });
                             }} className={styles.addFlowButton}><Plus size={16} /></button>
                         </div>
                         <ul className={styles.flowList}>
-                            {process.datastoreInteractions.filter(i => !!i.outLabel).map(i => (
-                                <li key={`${i.id}-out`} className={styles.flowItem}>
-                                    <span>→ {datastores.find(d => d.id === i.datastoreId)?.storeCode}: {i.outLabel}</span>
-                                    <button onClick={() => onDeleteDsInteraction(i.id)} className={styles.deleteButton}><Trash2 size={14} /></button>
+                            {dataStoreWrites.map(i => (
+                                <li key={i.writeEdgeId} className={styles.flowItem}>
+                                    <span>→ {datastores.find(d => d.id === i.dataStoreId)?.storeCode}: {i.writeLabel}</span>
+                                    <button onClick={() => onDeleteFlow(i.writeEdgeId!)} className={styles.deleteButton}><Trash2 size={14} /></button>
                                 </li>
                             ))}
                         </ul>
@@ -555,7 +499,7 @@ const SubProcessAccordion = ({
                         <div className={styles.flowSection}>
                             <h4 className={styles.flowSectionTitle}>Internal Process Flows</h4>
                             <div className={styles.flowForm}>
-                                <select value={inputState.procDir} onChange={e => setInputState({ ...inputState, procDir: e.target.value as 'to' | 'from' })} className={styles.flowSelectSmall}>
+                                <select value={inputState.procDir} onChange={e => setInputState({ ...inputState, procDir: e.target.value as ProcessFlowDirection })} className={styles.flowSelectSmall}>
                                     <option value="to">To</option>
                                     <option value="from">From</option>
                                 </select>
@@ -570,10 +514,10 @@ const SubProcessAccordion = ({
                                 }} className={styles.addFlowButton}><Plus size={16} /></button>
                             </div>
                             <ul className={styles.flowList}>
-                                {process.subProcessFlows.map(f => (
-                                    <li key={f.id} className={styles.flowItem}>
-                                        <span>{f.direction === 'to' ? '→' : '←'} {otherProcesses.find(p => p.id === f.targetProcessId)?.processNumber}: {f.label}</span>
-                                        <button onClick={() => onDeleteSubProcessFlow(f.id)} className={styles.deleteButton}><Trash2 size={14} /></button>
+                                {model.processFlows.map(f => (
+                                    <li key={f.edgeId} className={styles.flowItem}>
+                                        <span>{f.direction === 'to' ? '→' : '←'} {otherProcesses.find(p => p.id === f.otherProcessId)?.processNumber}: {f.label}</span>
+                                        <button onClick={() => onDeleteFlow(f.edgeId)} className={styles.deleteButton}><Trash2 size={14} /></button>
                                     </li>
                                 ))}
                             </ul>
