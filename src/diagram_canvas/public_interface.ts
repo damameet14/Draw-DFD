@@ -12,6 +12,18 @@ export { useDiagramImageRenderer } from './useDiagramImageRenderer';
 export { useDrawIoDiagramExporter } from './useDrawIoDiagramExporter';
 
 /**
+ * Layout of a decomposed level. Exported so the Level 1 and Level 2 imports can
+ * be checked against the arrangement they will actually be drawn in.
+ */
+export {
+    planDecomposedLevelLayout,
+    type DecomposedLevelLayout,
+    type FlowRoute,
+    type HandlePlacement,
+    type NodeLayout,
+} from './decomposedLevelLayout';
+
+/**
  * Context diagram geometry. Exported because `diagram_authoring` assigns a node's
  * initial position when it is created, and that position has to agree with the
  * arc the canvas will attach its flows to.

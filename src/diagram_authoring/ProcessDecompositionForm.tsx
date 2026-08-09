@@ -1,11 +1,16 @@
 import { useState } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronRight, Upload, Download } from 'lucide-react';
 import { useDiagramStore } from '../diagram_state/public_interface';
+import { pickAndReadTextFile } from '../diagram_persistence/public_interface';
 import {
     type DataStoreNode,
     type EntityNode,
     type ProcessNode,
 } from '../data_flow_diagram_model/public_interface';
+import {
+    importDecompositionFromCsv,
+    type DecompositionCsvImportSummary,
+} from './importDecompositionFromCsv';
 import {
     createFlowEdgeId,
     createInteractionPairId,
@@ -21,6 +26,9 @@ import styles from './DecompositionForm.module.css';
 
 const LEVEL = 1;
 
+/** Ships in `public/`, so it follows the app's base path when deployed. */
+const EXAMPLE_CSV_URL = `${import.meta.env.BASE_URL}examples/level-1-example.csv`;
+
 /**
  * Level 1 authoring: the processes that decompose the context process, the data
  * stores they use, and every flow between them.
@@ -35,10 +43,13 @@ export const ProcessDecompositionForm = () => {
     const removeNode = useDiagramStore((state) => state.removeNode);
     const addEdge = useDiagramStore((state) => state.addEdge);
     const removeEdge = useDiagramStore((state) => state.removeEdge);
+    const replaceLevel = useDiagramStore((state) => state.replaceLevel);
 
     const [entityName, setEntityName] = useState('');
     const [datastoreName, setDatastoreName] = useState('');
     const [expandedProcessId, setExpandedProcessId] = useState<string | null>(null);
+    const [importProblems, setImportProblems] = useState<string[]>([]);
+    const [importSummary, setImportSummary] = useState<DecompositionCsvImportSummary | null>(null);
 
     const existingEntities = selectFlowParticipants(diagram, LEVEL);
     const existingDatastores = selectDataStores(diagram, LEVEL);
@@ -75,6 +86,45 @@ export const ProcessDecompositionForm = () => {
 
         addNode(newNode);
         setDatastoreName('');
+    };
+
+    // ===== IMPORT =====
+
+    const handleImportCsv = async () => {
+        setImportProblems([]);
+        setImportSummary(null);
+
+        let picked;
+        try {
+            picked = await pickAndReadTextFile('.csv,text/csv');
+        } catch {
+            setImportProblems(['That file could not be read.']);
+            return;
+        }
+
+        // The user dismissed the picker; leave the level alone.
+        if (!picked) return;
+
+        const result = importDecompositionFromCsv(picked.text, LEVEL);
+
+        if (!result.ok) {
+            setImportProblems(result.problems);
+            return;
+        }
+
+        const hasExistingWork = processModels.length > 0 || existingEntities.length > 0;
+        if (hasExistingWork) {
+            const isConfirmed = window.confirm(
+                `Import ${result.processCount} processes and ${result.flowCount} flows from ` +
+                `"${picked.fileName}"?\n\nThis replaces everything on Level 1. ` +
+                'The context diagram and Level 2 are not affected.'
+            );
+            if (!isConfirmed) return;
+        }
+
+        replaceLevel(LEVEL, result.nodes, result.edges);
+        setExpandedProcessId(null);
+        setImportSummary(result);
     };
 
     // ===== SECTION B: PROCESS DEFINITIONS =====
@@ -184,6 +234,54 @@ export const ProcessDecompositionForm = () => {
             </div>
 
             <div className={styles.content}>
+                {/* IMPORT */}
+                <section className={styles.globalSection}>
+                    <h3 className={styles.globalTitle}>Import from CSV</h3>
+
+                    <p className={styles.importHint}>
+                        One row per process and the thing it exchanges data with, using the columns{' '}
+                        <code>process</code>, <code>type</code>, <code>name</code>,{' '}
+                        <code>in_flow</code>, and <code>out_flow</code>. <code>type</code> is{' '}
+                        <code>entity</code>, <code>datastore</code>, or <code>process</code>, and
+                        the two flow columns are read from the process's side — what it receives and
+                        what it sends. Leave one empty for a one-way flow.
+                    </p>
+
+                    <div className={styles.importActions}>
+                        <button onClick={handleImportCsv} className={styles.importButton}>
+                            <Upload size={16} /> Choose CSV file
+                        </button>
+                        <a
+                            href={EXAMPLE_CSV_URL}
+                            download="level-1-example.csv"
+                            className={styles.exampleLink}
+                        >
+                            <Download size={14} /> Example file
+                        </a>
+                    </div>
+
+                    {importProblems.length > 0 && (
+                        <ul className={styles.importProblemList}>
+                            {importProblems.map((problem) => (
+                                <li key={problem} className={styles.importProblem}>{problem}</li>
+                            ))}
+                        </ul>
+                    )}
+
+                    {importSummary && (
+                        <p className={styles.importSuccess}>
+                            Imported {importSummary.processCount} process
+                            {importSummary.processCount === 1 ? '' : 'es'},{' '}
+                            {importSummary.participantCount} entit
+                            {importSummary.participantCount === 1 ? 'y' : 'ies'},{' '}
+                            {importSummary.dataStoreCount} data store
+                            {importSummary.dataStoreCount === 1 ? '' : 's'}, and{' '}
+                            {importSummary.flowCount} flow
+                            {importSummary.flowCount === 1 ? '' : 's'}.
+                        </p>
+                    )}
+                </section>
+
                 {/* SECTION A: GLOBAL DEFINITIONS */}
                 <section className={styles.globalSection}>
                     <h3 className={styles.globalTitle}>Global Elements</h3>

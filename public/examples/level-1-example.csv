@@ -1,0 +1,20 @@
+process,type,name,in_flow,out_flow
+Registration,entity,Visitor,Registration Details,Registration Acknowledgement
+Registration,datastore,User_Tbl,,Registration Details
+Login,entity,Admin,Login Credentials,Login Acknowledgement
+Login,entity,Farmer,Login Credentials,Login Acknowledgement
+Login,entity,Agricultural Expert,Login Credentials,Login Acknowledgement
+Login,datastore,User_Tbl,Login Details,Validate Login Credentials
+Manage user,entity,Admin,Manage Employee,Employee Details
+Manage user,entity,Farmer,Manage Profile Details,Profile Details
+Manage user,datastore,User_Tbl,Profile Details,Manage Profile Details
+Manage farm,entity,Farmer,Manage Farm Details,Farm Details
+Manage farm,datastore,Farm_Tbl,Farm Details,Manage Farm Details
+AI Crop Diagnosis,entity,Farmer,Upload Image,Prediction Details
+AI Crop Diagnosis,entity,Agricultural Expert,Request AI Crop Analysis,AI Crop Analysis
+AI Crop Diagnosis,datastore,Farm_Tbl,Farm Details,
+AI Crop Diagnosis,datastore,Prediction_Tbl,Crop Diagnosis Details,Request AI Crop Analysis
+AI Crop Diagnosis,process,Manage Recommendation,,Diagnosis Result
+Manage Recommendation,entity,Agricultural Expert,Manage Recommendations,Recommendation Details
+Manage Recommendation,entity,Farmer,View Recommendations,Display Recommendations
+Manage Recommendation,datastore,Advisory_Tbl,Recommendation Details,Manage Recommendations
