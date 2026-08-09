@@ -3,6 +3,7 @@ import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getSmoothStepPath } from '
 import { useDiagramStore } from '../../diagram_state/public_interface';
 import { RotateCw } from 'lucide-react';
 import { useDiagramVisibilityPreferences } from '../../application_shell/public_interface';
+import { DEFAULT_FLOW_LABEL_TEXT_SIZE_PX } from '../contextDiagramGeometry';
 
 export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
     id,
@@ -292,9 +293,9 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
                             onMouseDown={(e) => e.stopPropagation()}
                             style={{
                                 background: isLabelSelected ? '#dbeafe' : '#ffffff',
-                                padding: '2px 6px',
+                                padding: '0.17em 0.5em',
                                 borderRadius: '3px',
-                                fontSize: 12,
+                                fontSize: `${edge?.labelTextSize ?? DEFAULT_FLOW_LABEL_TEXT_SIZE_PX}px`,
                                 fontWeight: 600,
                                 color: '#1e293b',
                                 border: isLabelSelected ? '2px solid #3b82f6' : '1px solid #e2e8f0',

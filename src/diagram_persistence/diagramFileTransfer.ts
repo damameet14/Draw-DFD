@@ -40,17 +40,24 @@ export function downloadImageDataUrl(dataUrl: string, diagramName: string, exten
     triggerDownload(dataUrl, toDiagramFileName(diagramName, extension));
 }
 
+export interface PickedTextFile {
+    fileName: string;
+    text: string;
+}
+
 /**
- * Opens the browser's file picker and reads the chosen diagram.
+ * Opens the browser's file picker and reads the chosen file as text.
  *
  * Resolves to `null` when the user dismisses the picker, which is not an error
  * and should leave the current diagram alone.
+ *
+ * @param accept value for the input's `accept` attribute, e.g. `'.csv,text/csv'`
  */
-export function pickAndReadDiagramFile(): Promise<DiagramDocumentParseResult | null> {
-    return new Promise((resolve) => {
+export function pickAndReadTextFile(accept: string): Promise<PickedTextFile | null> {
+    return new Promise((resolve, reject) => {
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
-        fileInput.accept = '.json,application/json';
+        fileInput.accept = accept;
 
         fileInput.addEventListener('change', () => {
             const file = fileInput.files?.[0];
@@ -60,8 +67,8 @@ export function pickAndReadDiagramFile(): Promise<DiagramDocumentParseResult | n
             }
 
             file.text()
-                .then((text) => resolve(parseDiagramDocument(text)))
-                .catch(() => resolve({ ok: false, error: 'That file could not be read.' }));
+                .then((text) => resolve({ fileName: file.name, text }))
+                .catch(() => reject(new Error('That file could not be read.')));
         });
 
         // Firing on cancel is only supported in newer browsers; where it is not,
@@ -70,4 +77,17 @@ export function pickAndReadDiagramFile(): Promise<DiagramDocumentParseResult | n
 
         fileInput.click();
     });
+}
+
+/** Opens the file picker and parses the chosen file as a saved diagram. */
+export async function pickAndReadDiagramFile(): Promise<DiagramDocumentParseResult | null> {
+    let picked: PickedTextFile | null;
+
+    try {
+        picked = await pickAndReadTextFile('.json,application/json');
+    } catch {
+        return { ok: false, error: 'That file could not be read.' };
+    }
+
+    return picked === null ? null : parseDiagramDocument(picked.text);
 }

@@ -17,6 +17,7 @@ export interface EntityNode extends DFDNodeBase {
     type: 'entity';
     width?: number;  // Optional custom width (default: 160px)
     height?: number; // Optional custom height (default: 80px)
+    textSize?: number; // Font size in px for the entity name (default: 14)
     // Optional: Role metadata if needed (e.g., 'admin', 'customer')
 }
 
@@ -55,6 +56,7 @@ export interface DFDEdge {
     targetHandle?: string;
     arrowDirection?: 'horizontal-first' | 'vertical-first' | 'smart'; // Auto or Manual arrow path direction
     labelOffset?: number; // Label position along path (0-1, default 0.5 for center)
+    labelTextSize?: number; // Font size in px for the flow label (default: 12)
     pairId?: string; // Links IN-flow and OUT-flow pairs together
 }
 

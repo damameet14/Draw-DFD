@@ -4,7 +4,19 @@ import { type EntityNode as EntityNodeType } from '../../data_flow_diagram_model
 import { useDiagramStore } from '../../diagram_state/public_interface';
 import styles from './ContextEntityNode.module.css';
 import { useDiagramVisibilityPreferences } from '../../application_shell/public_interface';
-import { getEntityLayoutInfo } from '../process_node/ContextProcessNode';
+import {
+    calculateRequiredEntitySize,
+    DEFAULT_ENTITY_TEXT_SIZE_PX,
+    ENTITY_EDGE_USABLE_FRACTION,
+    ENTITY_HANDLE_SPACING_PX,
+    MIN_ENTITY_SIZE,
+    quadrantForEntityIndex,
+    ENTITY_SIDES_BY_QUADRANT,
+} from '../contextDiagramGeometry';
+
+/** Percentage of an edge handles may occupy, centred, leaving the corners clear. */
+const HANDLE_SPAN_PERCENT = ENTITY_EDGE_USABLE_FRACTION * 100;
+const HANDLE_SPAN_START_PERCENT = (100 - HANDLE_SPAN_PERCENT) / 2;
 
 type Side = 'top' | 'right' | 'bottom' | 'left';
 
@@ -13,19 +25,20 @@ export const ContextEntityNode = ({ data, selected }: NodeProps<EntityNodeType>)
     const updateNodeInternals = useUpdateNodeInternals();
     const { areFlowHandlesVisible } = useDiagramVisibilityPreferences();
     const nodeElementReference = useRef<HTMLDivElement>(null);
+    const wasManuallyResized = useRef(false);
 
-    const width = data.width || 120;
-    const height = data.height || 120;
+    const width = data.width || MIN_ENTITY_SIZE;
+    const height = data.height || MIN_ENTITY_SIZE;
 
     // Determine this entity's index and layout info
     const entityNodes = diagram.nodes.filter(n => n.type === 'entity' && n.level === 0);
     const entityIndex = entityNodes.findIndex(n => n.id === data.id);
-    const totalEntities = entityNodes.length;
 
-    // Get layout info (quadrant, handle sides) from the pure function
-    const layoutInfo = entityIndex >= 0 ? getEntityLayoutInfo(entityIndex, totalEntities) : null;
-    const inSide: Side = layoutInfo?.entityInSide || 'right';
-    const outSide: Side = layoutInfo?.entityOutSide || 'bottom';
+    // Only the quadrant matters here, and that follows from the index alone —
+    // the angular sections the process circle uses are not needed on this side.
+    const quadrant = entityIndex >= 0 ? quadrantForEntityIndex(entityIndex) : 'top';
+    const inSide: Side = ENTITY_SIDES_BY_QUADRANT[quadrant].inSide;
+    const outSide: Side = ENTITY_SIDES_BY_QUADRANT[quadrant].outSide;
 
     // Get flows connected to this entity
     const incomingFlows = diagram.edges.filter(e =>
@@ -64,9 +77,6 @@ export const ContextEntityNode = ({ data, selected }: NodeProps<EntityNodeType>)
     const sortedIncoming = [...incomingFlows].sort((a, b) => getEntityPairIndex(a.id) - getEntityPairIndex(b.id));
     const sortedOutgoing = [...outgoingFlows].sort((a, b) => getEntityPairIndex(a.id) - getEntityPairIndex(b.id));
 
-    // Get the quadrant to determine reversal
-    const quadrant = layoutInfo?.quadrant || 'top';
-
     // For nested rectangles, specific quadrants need specific reversals:
     // TOP:    Neither reversed
     // RIGHT:  OUTs reversed (incoming from process)
@@ -79,23 +89,36 @@ export const ContextEntityNode = ({ data, selected }: NodeProps<EntityNodeType>)
     const orderedIncoming = reverseIncoming ? [...sortedIncoming].reverse() : sortedIncoming;
     const orderedOutgoing = reverseOutgoing ? [...sortedOutgoing].reverse() : sortedOutgoing;
 
+    // Spread handles across most of the edge rather than the middle 60%, so a box
+    // holds more flows before it has to grow.
+    const offsetForIndex = (index: number, count: number) =>
+        count === 1
+            ? 50
+            : HANDLE_SPAN_START_PERCENT + (index * HANDLE_SPAN_PERCENT) / Math.max(1, count - 1);
+
     // Incoming flows (Process → Entity) = target handles = OUT side on Entity
     orderedIncoming.forEach((flow, idx) => {
-        const count = orderedIncoming.length;
-        const offset = count === 1 ? 50 : 20 + (idx * 60 / Math.max(1, count - 1));
-        rawHandles.push({ id: flow.id, side: outSide, offset, type: 'target' });
+        rawHandles.push({
+            id: flow.id,
+            side: outSide,
+            offset: offsetForIndex(idx, orderedIncoming.length),
+            type: 'target',
+        });
     });
 
     // Outgoing flows (Entity → Process) = source handles = IN side on Entity
     orderedOutgoing.forEach((flow, idx) => {
-        const count = orderedOutgoing.length;
-        const offset = count === 1 ? 50 : 20 + (idx * 60 / Math.max(1, count - 1));
-        rawHandles.push({ id: flow.id, side: inSide, offset, type: 'source' });
+        rawHandles.push({
+            id: flow.id,
+            side: inSide,
+            offset: offsetForIndex(idx, orderedOutgoing.length),
+            type: 'source',
+        });
     });
 
     // DISTRIBUTE HANDLES LOGIC
     const distributedHandles: EntityHandle[] = [];
-    const minSpacingPx = 25;
+    const minSpacingPx = ENTITY_HANDLE_SPACING_PX;
 
     (['top', 'right', 'bottom', 'left'] as Side[]).forEach(side => {
         const sideHandles = rawHandles
@@ -108,7 +131,7 @@ export const ContextEntityNode = ({ data, selected }: NodeProps<EntityNodeType>)
         if (sideHandles.length === 0) return;
 
         const sideLength = (side === 'top' || side === 'bottom') ? width : height;
-        let positionsPx = sideHandles.map(h => (h.offset / 100) * sideLength);
+        const positionsPx = sideHandles.map(h => (h.offset / 100) * sideLength);
 
         let changed = true;
         let iterations = 0;
@@ -148,42 +171,30 @@ export const ContextEntityNode = ({ data, selected }: NodeProps<EntityNodeType>)
         return () => clearTimeout(t);
     }, [distributedHandles.length, width, height, data.id, updateNodeInternals, diagram.edges, entityIndex]);
 
-    // Auto-resize if needed
+    // Auto-resize to fit the handles, using the same rule the CSV import uses to
+    // size boxes up front.
+    //
+    // Like the process circle, this grows whenever the box is too small but only
+    // shrinks while the size is still the automatic one, so dragging the resize
+    // handles is not undone a moment later.
+    const textSize = data.textSize ?? DEFAULT_ENTITY_TEXT_SIZE_PX;
+
+    const requiredSize = calculateRequiredEntitySize(
+        { inFlowCount: outgoingFlows.length, outFlowCount: incomingFlows.length },
+        textSize
+    );
+
     useEffect(() => {
-        let newWidth = width;
-        let newHeight = height;
-        let shouldResize = false;
-        const minPadding = 20;
+        const currentSize = Math.max(width, height);
+        const isTooSmall = currentSize < requiredSize;
+        const canReclaimSpace = currentSize > requiredSize && !wasManuallyResized.current;
+        if (!isTooSmall && !canReclaimSpace) return;
 
-        const countMap = { top: 0, right: 0, bottom: 0, left: 0 };
-        distributedHandles.forEach(h => countMap[h.side]++);
-
-        const requiredW = Math.max(
-            (countMap.top * minSpacingPx) + minPadding,
-            (countMap.bottom * minSpacingPx) + minPadding,
-            120
-        );
-
-        const requiredH = Math.max(
-            (countMap.left * minSpacingPx) + minPadding,
-            (countMap.right * minSpacingPx) + minPadding,
-            120
-        );
-
-        if (requiredW > width || requiredH > height) {
-            const newSize = Math.max(requiredW, requiredH, width, height);
-            newWidth = newSize;
-            newHeight = newSize;
-            shouldResize = true;
-        }
-
-        if (shouldResize) {
-            const timer = setTimeout(() => {
-                updateNode(data.id, { width: newWidth, height: newHeight });
-            }, 300);
-            return () => clearTimeout(timer);
-        }
-    }, [distributedHandles.length, width, height, data.id, updateNode]);
+        const timer = setTimeout(() => {
+            updateNode(data.id, { width: requiredSize, height: requiredSize });
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [requiredSize, width, height, data.id, updateNode]);
 
     const getHandleStyleAndPosition = (side: Side, offset: number) => {
         const clampedOffset = Math.max(0, Math.min(100, offset));
@@ -213,8 +224,9 @@ export const ContextEntityNode = ({ data, selected }: NodeProps<EntityNodeType>)
         return { style, position };
     };
 
-    const onResize = (_event: any, params: any) => {
-        const size = Math.max(params.width, params.height);
+    const onResize = (_event: unknown, params: { width: number; height: number }) => {
+        wasManuallyResized.current = true;
+        const size = Math.round(Math.max(params.width, params.height));
         updateNode(data.id, { width: size, height: size });
     };
 
@@ -259,7 +271,9 @@ export const ContextEntityNode = ({ data, selected }: NodeProps<EntityNodeType>)
                 );
             })}
 
-            <div className={styles.entityLabel}>{data.label}</div>
+            <div className={styles.entityLabel} style={{ fontSize: `${textSize}px` }}>
+                {data.label}
+            </div>
         </div>
     );
 };

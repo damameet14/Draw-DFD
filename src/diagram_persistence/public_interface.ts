@@ -20,6 +20,8 @@ export {
     downloadDiagramAsFile,
     downloadImageDataUrl,
     pickAndReadDiagramFile,
+    pickAndReadTextFile,
+    type PickedTextFile,
 } from './diagramFileTransfer';
 
 export { useDiagramAutosave, clearAutosavedDiagram } from './useDiagramAutosave';

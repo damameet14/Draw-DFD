@@ -1,8 +1,71 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, ArrowRight } from 'lucide-react';
+import { Plus, Trash2, ArrowRight, Download, Upload } from 'lucide-react';
 import { useDiagramStore } from '../diagram_state/public_interface';
+import { pickAndReadTextFile } from '../diagram_persistence/public_interface';
 import { type EntityNode, type ProcessNode } from '../data_flow_diagram_model/public_interface';
+import {
+    calculateProcessNodePosition,
+    DEFAULT_ENTITY_TEXT_SIZE_PX,
+    DEFAULT_FLOW_LABEL_TEXT_SIZE_PX,
+    MAX_TEXT_SIZE_PX,
+    MIN_PROCESS_DIAMETER,
+    MIN_TEXT_SIZE_PX,
+    planContextDiagramLayout,
+} from '../diagram_canvas/public_interface';
+import { importContextDiagramFromCsv, type ContextCsvImportSummary } from './importContextDiagramFromCsv';
 import styles from './ContextDiagramForm.module.css';
+
+/** Ships in `public/`, so it follows the app's base path when deployed. */
+const EXAMPLE_CSV_URL = `${import.meta.env.BASE_URL}examples/context-diagram-example.csv`;
+
+interface TextSizeFieldProps {
+    label: string;
+    value: number;
+    onChange: (sizeInPixels: number) => void;
+}
+
+/**
+ * A typed font size in pixels.
+ *
+ * A number field rather than a slider: a diagram destined for a large print or a
+ * high-resolution export may need type an order of magnitude bigger than the
+ * on-screen default, which is an awkward range to drag through.
+ *
+ * The typed text is held locally while editing so that a half-typed or
+ * temporarily out-of-range value does not get pushed onto every node; the diagram
+ * is updated only once the value parses and fits the allowed range.
+ */
+function TextSizeField({ label, value, onChange }: TextSizeFieldProps) {
+    const [draft, setDraft] = useState<string | null>(null);
+
+    const commit = (text: string) => {
+        const parsed = Number.parseInt(text, 10);
+        if (Number.isNaN(parsed)) return;
+        onChange(Math.min(MAX_TEXT_SIZE_PX, Math.max(MIN_TEXT_SIZE_PX, parsed)));
+    };
+
+    return (
+        <label className={styles.textSizeField}>
+            <span className={styles.textSizeLabel}>{label}</span>
+            <span className={styles.textSizeInputWrapper}>
+                <input
+                    type="number"
+                    min={MIN_TEXT_SIZE_PX}
+                    max={MAX_TEXT_SIZE_PX}
+                    step={1}
+                    value={draft ?? value}
+                    onChange={(e) => {
+                        setDraft(e.target.value);
+                        commit(e.target.value);
+                    }}
+                    onBlur={() => setDraft(null)}
+                    className={styles.textSizeInput}
+                />
+                <span className={styles.textSizeUnit}>px</span>
+            </span>
+        </label>
+    );
+}
 
 export const ContextDiagramForm = () => {
     const diagram = useDiagramStore((state) => state.diagram);
@@ -12,11 +75,16 @@ export const ContextDiagramForm = () => {
     const addEdge = useDiagramStore((state) => state.addEdge);
     const removeEdge = useDiagramStore((state) => state.removeEdge);
     const setDiagramName = useDiagramStore((state) => state.setDiagramName);
+    const replaceLevel = useDiagramStore((state) => state.replaceLevel);
+    const setEntityTextSizeForLevel = useDiagramStore((state) => state.setEntityTextSizeForLevel);
+    const setFlowLabelTextSizeForLevel = useDiagramStore((state) => state.setFlowLabelTextSizeForLevel);
 
     const [entityName, setEntityName] = useState('');
     const [inFlowName, setInFlowName] = useState('');
     const [outFlowName, setOutFlowName] = useState('');
     const [selectedEntityId, setSelectedEntityId] = useState<string>('');
+    const [importProblems, setImportProblems] = useState<string[]>([]);
+    const [importSummary, setImportSummary] = useState<ContextCsvImportSummary | null>(null);
 
     // Ensure Process 0.0 exists.
     //
@@ -37,7 +105,9 @@ export const ContextDiagramForm = () => {
             label: 'System',
             processNumber: '0.0',
             level: 0,
-            position: { x: 450, y: 350 }
+            // Derived from the diameter so the circle is centred on the point the
+            // entity ring is built around.
+            position: calculateProcessNodePosition(MIN_PROCESS_DIAMETER),
         };
         addNode(mainProcess);
     }, [diagram.nodes, addNode]);
@@ -45,8 +115,15 @@ export const ContextDiagramForm = () => {
     const mainProcess = diagram.nodes.find(
         (n): n is ProcessNode => n.type === 'process' && n.level === 0 && n.processNumber === '0.0'
     );
-    const entities = diagram.nodes.filter(n => n.type === 'entity' && n.level === 0);
+    const entities = diagram.nodes.filter(
+        (n): n is EntityNode => n.type === 'entity' && n.level === 0
+    );
     const flows = diagram.edges.filter(e => e.level === 0);
+
+    // Text sizes are applied across the level, so the first element's value is
+    // representative; it falls back to the default on an empty diagram.
+    const entityTextSize = entities[0]?.textSize ?? DEFAULT_ENTITY_TEXT_SIZE_PX;
+    const flowLabelTextSize = flows[0]?.labelTextSize ?? DEFAULT_FLOW_LABEL_TEXT_SIZE_PX;
 
     const handleSystemNameChange = (name: string) => {
         if (mainProcess) {
@@ -58,64 +135,90 @@ export const ContextDiagramForm = () => {
     const handleAddEntity = () => {
         if (!entityName.trim()) return;
 
-        // Process center on canvas
-        const PROCESS_CENTER = { x: 450, y: 350 };
-        const ENTITY_DISTANCE = 280; // Distance from process center to entity center
-        const ENTITY_SIZE = 120;
+        // Plan the ring as it will be once this entity joins it, then take the
+        // slot that was made for it. The existing entities keep their current
+        // positions — re-laying them out would move boxes the user has dragged.
+        const flowCountsIncludingNewEntity = [
+            ...entities.map((entity) => ({
+                inFlowCount: flows.filter((flow) => flow.sourceNodeId === entity.id).length,
+                outFlowCount: flows.filter((flow) => flow.targetNodeId === entity.id).length,
+            })),
+            { inFlowCount: 0, outFlowCount: 0 },
+        ];
 
-        // Calculate the entity's index and which quadrant it belongs to
-        const entityIndex = entities.length;
-        const quadrantIndex = entityIndex % 4;
-        const entitiesInQuadrantBefore = Math.floor(entityIndex / 4);
-
-        // Count total entities that will be in each quadrant after this one is added
-        const totalAfter = entityIndex + 1;
-        const entitiesPerQuadrant: number[] = [0, 0, 0, 0];
-        for (let i = 0; i < totalAfter; i++) {
-            entitiesPerQuadrant[i % 4]++;
-        }
-
-        const entitiesInThisQuadrant = entitiesPerQuadrant[quadrantIndex];
-        const sectionSize = 90 / entitiesInThisQuadrant;
-
-        // Quadrant start angles (0° at 12 o'clock)
-        // RIGHT: 0-90, BOTTOM: 90-180, LEFT: 180-270, TOP: 270-360
-        const quadrantStarts = [270, 0, 90, 180]; // TOP, RIGHT, BOTTOM, LEFT
-        const S_q = quadrantStarts[quadrantIndex];
-
-        // k = index of this entity within its quadrant (0-based)
-        const k = entitiesInQuadrantBefore;
-
-        // Calculate section based on quadrant
-        // TOP/BOTTOM: first entity at END of quadrant (near 360° and 180°)
-        // RIGHT/LEFT: first entity at START of quadrant (near 0° and 180°)
-        let sectionCenter: number;
-        if (quadrantIndex === 0 || quadrantIndex === 2) {
-            // TOP or BOTTOM: k=0 at end
-            sectionCenter = S_q + 90 - (k + 0.5) * sectionSize;
-        } else {
-            // RIGHT or LEFT: k=0 at start
-            sectionCenter = S_q + (k + 0.5) * sectionSize;
-        }
-
-        // Convert angle to canvas position
-        // 0° at 12 o'clock, clockwise: angle 0 = top, 90 = right, 180 = bottom, 270 = left
-        const angleRad = (sectionCenter - 90) * (Math.PI / 180);
-        const x = PROCESS_CENTER.x + ENTITY_DISTANCE * Math.cos(angleRad) - ENTITY_SIZE / 2;
-        const y = PROCESS_CENTER.y + ENTITY_DISTANCE * Math.sin(angleRad) - ENTITY_SIZE / 2;
-
-        const position = { x: Math.round(x), y: Math.round(y) };
+        // Ring the circle where it actually is, which is not the default centre if
+        // it has been dragged or has grown.
+        const currentProcessDiameter = mainProcess?.diameter ?? MIN_PROCESS_DIAMETER;
+        const placement = planContextDiagramLayout(flowCountsIncludingNewEntity, {
+            processCenter: mainProcess
+                ? {
+                    x: mainProcess.position.x + currentProcessDiameter / 2,
+                    y: mainProcess.position.y + currentProcessDiameter / 2,
+                }
+                : undefined,
+        });
+        const newEntityPlacement = placement.entities[placement.entities.length - 1];
 
         const newNode: EntityNode = {
             id: `e-${crypto.randomUUID().slice(0, 4)}`,
             type: 'entity',
             label: entityName,
             level: 0,
-            position: position
+            position: newEntityPlacement.position,
+            width: newEntityPlacement.size,
+            height: newEntityPlacement.size,
         };
 
         addNode(newNode);
         setEntityName('');
+    };
+
+    /**
+     * Replaces Level 0 with the contents of a CSV file.
+     *
+     * Import replaces rather than merges: a spreadsheet describes the whole
+     * context diagram, and appending to what is already there would silently
+     * produce duplicate entities. Levels 1 and 2 are left alone.
+     */
+    const handleImportCsv = async () => {
+        setImportProblems([]);
+        setImportSummary(null);
+
+        let picked;
+        try {
+            picked = await pickAndReadTextFile('.csv,text/csv');
+        } catch {
+            setImportProblems(['That file could not be read.']);
+            return;
+        }
+        if (!picked) return;
+
+        const result = importContextDiagramFromCsv(picked.text, {
+            existingContextProcess: mainProcess,
+        });
+
+        if (!result.ok) {
+            setImportProblems(result.problems);
+            return;
+        }
+
+        const hasExistingWork = entities.length > 0 || flows.length > 0;
+        if (hasExistingWork) {
+            const isConfirmed = window.confirm(
+                `Import ${result.entityCount} entities and ${result.flowPairCount} flow pairs from ` +
+                `"${picked.fileName}"?\n\nThis replaces everything on Level 0. Levels 1 and 2 are not affected.`
+            );
+            if (!isConfirmed) return;
+        }
+
+        replaceLevel(0, result.nodes, result.edges);
+        if (result.systemName) setDiagramName(result.systemName);
+
+        setImportSummary({
+            systemName: result.systemName,
+            entityCount: result.entityCount,
+            flowPairCount: result.flowPairCount,
+        });
     };
 
     const handleAddFlow = () => {
@@ -189,16 +292,24 @@ export const ContextDiagramForm = () => {
                     />
                 </div>
 
-                {/* Process Style Controls */}
-                <div className={styles.formGroup}>
-                    <label className={styles.label}>Text Size: {mainProcess?.textSize ?? 16}px</label>
-                    <input
-                        type="range"
-                        min="10"
-                        max="24"
+                {/* Text sizing. Typed rather than dragged, because a diagram being
+                    exported at a large size may need type far bigger than a
+                    slider's range would offer. */}
+                <div className={styles.textSizeGrid}>
+                    <TextSizeField
+                        label="Process text"
                         value={mainProcess?.textSize ?? 16}
-                        onChange={(e) => mainProcess && updateNode(mainProcess.id, { textSize: parseInt(e.target.value) })}
-                        className={styles.slider}
+                        onChange={(size) => mainProcess && updateNode(mainProcess.id, { textSize: size })}
+                    />
+                    <TextSizeField
+                        label="Entity text"
+                        value={entityTextSize}
+                        onChange={(size) => setEntityTextSizeForLevel(0, size)}
+                    />
+                    <TextSizeField
+                        label="Flow labels"
+                        value={flowLabelTextSize}
+                        onChange={(size) => setFlowLabelTextSizeForLevel(0, size)}
                     />
                 </div>
 
@@ -216,6 +327,50 @@ export const ContextDiagramForm = () => {
             </div>
 
             <div className={styles.content}>
+                <section className={styles.section}>
+                    <h3 className={styles.sectionTitle}>
+                        <span className={`${styles.badge} ${styles.badgePurple}`}></span>
+                        Import from CSV
+                    </h3>
+
+                    <p className={styles.importHint}>
+                        One row per flow pair, with the columns <code>entity</code>,{' '}
+                        <code>in_flow</code>, and <code>out_flow</code>. Both flow names are
+                        required — a context flow always names what the entity sends and what it
+                        gets back. An optional <code>system</code> column names the system.
+                    </p>
+
+                    <div className={styles.importActions}>
+                        <button onClick={handleImportCsv} className={styles.importButton}>
+                            <Upload size={16} /> Choose CSV file
+                        </button>
+                        <a
+                            href={EXAMPLE_CSV_URL}
+                            download="context-diagram-example.csv"
+                            className={styles.exampleLink}
+                        >
+                            <Download size={14} /> Example file
+                        </a>
+                    </div>
+
+                    {importProblems.length > 0 && (
+                        <ul className={styles.importProblemList}>
+                            {importProblems.map((problem) => (
+                                <li key={problem} className={styles.importProblem}>{problem}</li>
+                            ))}
+                        </ul>
+                    )}
+
+                    {importSummary && (
+                        <p className={styles.importSuccess}>
+                            Imported {importSummary.entityCount} entit
+                            {importSummary.entityCount === 1 ? 'y' : 'ies'} and{' '}
+                            {importSummary.flowPairCount} flow pair
+                            {importSummary.flowPairCount === 1 ? '' : 's'}.
+                        </p>
+                    )}
+                </section>
+
                 <section className={styles.section}>
                     <h3 className={styles.sectionTitle}>
                         <span className={`${styles.badge} ${styles.badgeGreen}`}></span>

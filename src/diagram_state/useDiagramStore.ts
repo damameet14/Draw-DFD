@@ -31,6 +31,17 @@ interface DiagramState {
     resetDiagram: () => void;
 
     /**
+     * Swaps everything on one level for the given nodes and edges, leaving the
+     * other levels untouched.
+     *
+     * Used by the context diagram import, which produces a whole level at once.
+     * Doing it in one update rather than a remove-then-add loop means the canvas
+     * never renders a half-replaced level, and no flow is ever transiently
+     * dangling.
+     */
+    replaceLevel: (level: DFDLevel, nodes: DFDNode[], edges: DFDEdge[]) => void;
+
+    /**
      * Moves a node during a drag gesture. On Level 1 and Level 2, processes and
      * data stores are laid out in vertical columns: dragging one horizontally
      * moves every node of the same type on that level by the same delta, while
@@ -44,6 +55,17 @@ interface DiagramState {
 
     /** Keeps every process circle on a level the same diameter. */
     syncProcessNodeDiameter: (level: DFDLevel, diameter: number) => void;
+
+    /**
+     * Sets the name font size on every entity of a level at once.
+     *
+     * Text size is a whole-diagram presentation choice rather than something a
+     * user sets per box, so it is applied in bulk.
+     */
+    setEntityTextSizeForLevel: (level: DFDLevel, textSize: number) => void;
+
+    /** Sets the label font size on every flow of a level at once. */
+    setFlowLabelTextSizeForLevel: (level: DFDLevel, textSize: number) => void;
 }
 
 /**
@@ -136,6 +158,16 @@ export const useDiagramStore = create<DiagramState>((set) => ({
         set({ diagram: createInitialDataFlowDiagram() });
     },
 
+    replaceLevel: (level, nodes, edges) => {
+        set((state) => ({
+            diagram: {
+                ...state.diagram,
+                nodes: [...state.diagram.nodes.filter((node) => node.level !== level), ...nodes],
+                edges: [...state.diagram.edges.filter((edge) => edge.level !== level), ...edges],
+            },
+        }));
+    },
+
     moveNodeApplyingColumnAlignment: (nodeId, position, levelOverride) => {
         set((state) => {
             const currentLevel = levelOverride ?? state.diagram.level;
@@ -179,6 +211,30 @@ export const useDiagramStore = create<DiagramState>((set) => ({
                 },
             };
         });
+    },
+
+    setEntityTextSizeForLevel: (level, textSize) => {
+        set((state) => ({
+            diagram: {
+                ...state.diagram,
+                nodes: state.diagram.nodes.map((node) =>
+                    node.level === level && node.type === 'entity'
+                        ? { ...node, textSize }
+                        : node
+                ),
+            },
+        }));
+    },
+
+    setFlowLabelTextSizeForLevel: (level, textSize) => {
+        set((state) => ({
+            diagram: {
+                ...state.diagram,
+                edges: state.diagram.edges.map((edge) =>
+                    edge.level === level ? { ...edge, labelTextSize: textSize } : edge
+                ),
+            },
+        }));
     },
 
     syncProcessNodeDiameter: (level, diameter) => {

@@ -206,3 +206,53 @@ describe('mutation immutability', () => {
         expect(nodesBefore[0].position).toEqual({ x: 0, y: 0 });
     });
 });
+
+describe('replaceLevel', () => {
+    it('swaps one level for the given nodes and edges', () => {
+        storeActions().addNode(buildEntity('old', 0, 0, 0));
+        storeActions().addNode(buildProcess('old-p', 0, 0, 0));
+        storeActions().addEdge(buildFlow('old-f', 'old', 'old-p', 0));
+
+        storeActions().replaceLevel(
+            0,
+            [buildEntity('new', 0, 10, 10), buildProcess('new-p', 0, 20, 20)],
+            [buildFlow('new-f', 'new', 'new-p', 0)]
+        );
+
+        const { nodes, edges } = useDiagramStore.getState().diagram;
+        expect(nodes.map(node => node.id)).toEqual(['new', 'new-p']);
+        expect(edges.map(edge => edge.id)).toEqual(['new-f']);
+    });
+
+    it('leaves the other levels untouched', () => {
+        storeActions().addNode(buildProcess('p1', 1, 0, 0));
+        storeActions().addNode(buildDataStore('d1', 1, 0, 0));
+        storeActions().addEdge(buildFlow('f1', 'p1', 'd1', 1));
+        storeActions().addNode(buildProcess('p2', 2, 0, 0));
+
+        storeActions().replaceLevel(0, [buildEntity('e0', 0, 0, 0)], []);
+
+        const { nodes, edges } = useDiagramStore.getState().diagram;
+        expect(nodes.map(node => node.id).sort()).toEqual(['d1', 'e0', 'p1', 'p2']);
+        expect(edges.map(edge => edge.id)).toEqual(['f1']);
+    });
+
+    it('clears a level when given nothing to put on it', () => {
+        storeActions().addNode(buildEntity('e0', 0, 0, 0));
+        storeActions().addNode(buildProcess('p1', 1, 0, 0));
+
+        storeActions().replaceLevel(0, [], []);
+
+        expect(currentNodes().map(node => node.id)).toEqual(['p1']);
+    });
+
+    it('does not mutate the previous diagram object', () => {
+        storeActions().addNode(buildEntity('e0', 0, 0, 0));
+        const nodesBefore = currentNodes();
+
+        storeActions().replaceLevel(0, [buildEntity('e1', 0, 5, 5)], []);
+
+        expect(nodesBefore.map(node => node.id)).toEqual(['e0']);
+        expect(currentNodes()).not.toBe(nodesBefore);
+    });
+});

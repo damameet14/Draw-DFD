@@ -4,110 +4,19 @@ import { type ProcessNode as ProcessNodeType } from '../../data_flow_diagram_mod
 import { useDiagramStore } from '../../diagram_state/public_interface';
 import styles from './ContextProcessNode.module.css';
 import { useDiagramVisibilityPreferences } from '../../application_shell/public_interface';
-
-// =====================================================================
-// QUADRANT SYSTEM (Fixed, Absolute)
-// 0° at 12 o'clock, angles increase clockwise
-// =====================================================================
-type Quadrant = 'top' | 'right' | 'bottom' | 'left';
-
-const QUADRANT_START_ANGLES: Record<Quadrant, number> = {
-    top: 270,
-    right: 0,
-    bottom: 90,
-    left: 180
-};
-
-const QUADRANT_ORDER: Quadrant[] = ['top', 'right', 'bottom', 'left'];
-
-// =====================================================================
-// PURE LAYOUT FUNCTION
-// f(entityIndex, totalEntities) → layout info
-// =====================================================================
-interface EntityLayoutInfo {
-    quadrant: Quadrant;
-    processSection: { start: number; end: number };
-    inFlowRange: { start: number; end: number };
-    outFlowRange: { start: number; end: number };
-    entityInSide: 'top' | 'right' | 'bottom' | 'left';
-    entityOutSide: 'top' | 'right' | 'bottom' | 'left';
-}
-
-function getEntityLayoutInfo(entityIndex: number, totalEntities: number): EntityLayoutInfo {
-    // entityIndex is 0-based
-    // Quadrant assignment: cyclic TOP → RIGHT → BOTTOM → LEFT → TOP ...
-    const quadrantIndex = entityIndex % 4;
-    const quadrant = QUADRANT_ORDER[quadrantIndex];
-
-    // Count entities per quadrant
-    const entitiesPerQuadrant: Record<Quadrant, number> = { top: 0, right: 0, bottom: 0, left: 0 };
-    for (let i = 0; i < totalEntities; i++) {
-        const q = QUADRANT_ORDER[i % 4];
-        entitiesPerQuadrant[q]++;
-    }
-
-    const m = entitiesPerQuadrant[quadrant]; // entities in this quadrant
-    const sectionSize = 90 / m;
-
-    // k = 0-based index of this entity within its quadrant
-    const k = Math.floor(entityIndex / 4);
-
-    const S_q = QUADRANT_START_ANGLES[quadrant];
-
-    // Section calculation depends on quadrant:
-    // TOP/BOTTOM: First entity (k=0) should be at the END of quadrant (close to 360° and 180°)
-    // RIGHT/LEFT: First entity (k=0) should be at the START of quadrant (close to 0° and 180°)
-    let sectionStart: number;
-    let sectionEnd: number;
-
-    if (quadrant === 'top' || quadrant === 'bottom') {
-        // Reverse order: k=0 at end of quadrant
-        sectionEnd = S_q + 90 - k * sectionSize;
-        sectionStart = S_q + 90 - (k + 1) * sectionSize;
-    } else {
-        // Normal order: k=0 at start of quadrant
-        sectionStart = S_q + k * sectionSize;
-        sectionEnd = S_q + (k + 1) * sectionSize;
-    }
-
-    const half = sectionSize / 2;
-
-    // Flow ranges depend on quadrant
-    // For TOP and LEFT: OUT first (lower angles), then IN (higher angles)
-    // For RIGHT and BOTTOM: IN first (lower angles), then OUT (higher angles)
-    let inFlowRange: { start: number; end: number };
-    let outFlowRange: { start: number; end: number };
-
-    if (quadrant === 'top' || quadrant === 'left') {
-        // OUT in lower half, IN in upper half
-        outFlowRange = { start: sectionStart, end: sectionStart + half };
-        inFlowRange = { start: sectionStart + half, end: sectionEnd };
-    } else {
-        // RIGHT and BOTTOM: IN in lower half, OUT in upper half
-        inFlowRange = { start: sectionStart, end: sectionStart + half };
-        outFlowRange = { start: sectionStart + half, end: sectionEnd };
-    }
-
-    // Entity node side assignment (fixed by quadrant)
-    const ENTITY_SIDES: Record<Quadrant, { inSide: 'top' | 'right' | 'bottom' | 'left'; outSide: 'top' | 'right' | 'bottom' | 'left' }> = {
-        top: { inSide: 'right', outSide: 'bottom' },
-        right: { inSide: 'left', outSide: 'bottom' },
-        bottom: { inSide: 'top', outSide: 'left' },
-        left: { inSide: 'top', outSide: 'right' }
-    };
-
-    return {
-        quadrant,
-        processSection: { start: sectionStart, end: sectionEnd },
-        inFlowRange,
-        outFlowRange,
-        entityInSide: ENTITY_SIDES[quadrant].inSide,
-        entityOutSide: ENTITY_SIDES[quadrant].outSide
-    };
-}
+import {
+    computeContextDiagramLayout,
+    HANDLE_SPACING_PX,
+    MIN_PROCESS_DIAMETER,
+    type EntityLayoutInfo,
+} from '../contextDiagramGeometry';
 
 // =====================================================================
 // PROCESS NODE COMPONENT
+//
+// The quadrant system and section allocation live in contextDiagramGeometry,
+// which sizes the circle from the flow counts. This component only renders what
+// that returns and handles direct manipulation of individual handles.
 // =====================================================================
 export const ContextProcessNode = ({ data, selected }: NodeProps<ProcessNodeType>) => {
     const { diagram, updateNode, updateEdge } = useDiagramStore();
@@ -116,31 +25,43 @@ export const ContextProcessNode = ({ data, selected }: NodeProps<ProcessNodeType
     const [draggingHandleId, setDraggingHandleId] = useState<string | null>(null);
     const nodeElementReference = useRef<HTMLDivElement>(null);
 
-    const diameter = data.diameter || 200;
+    const diameter = data.diameter || MIN_PROCESS_DIAMETER;
     const circleRadius = diameter / 2;
     const incomingFlows = diagram.edges.filter(e => e.targetNodeId === data.id);
     const outgoingFlows = diagram.edges.filter(e => e.sourceNodeId === data.id);
 
     // Get all Level 0 entity nodes
     const entityNodes = diagram.nodes.filter(n => n.type === 'entity' && n.level === 0);
-    const totalEntities = entityNodes.length;
 
-    // Build entity layout map
-    const entityLayoutMap = new Map<string, { layout: EntityLayoutInfo; incoming: string[]; outgoing: string[] }>();
-    entityNodes.forEach((entity, index) => {
-        const layout = getEntityLayoutInfo(index, totalEntities);
-        entityLayoutMap.set(entity.id, { layout, incoming: [], outgoing: [] });
+    // Group each entity's flows first: the section each entity gets is sized from
+    // how many flows it has, so the counts are needed before the layout.
+    const flowsByEntityId = new Map<string, { incoming: string[]; outgoing: string[] }>();
+    entityNodes.forEach(entity => {
+        flowsByEntityId.set(entity.id, { incoming: [], outgoing: [] });
     });
 
-    // Categorize flows by entity
     incomingFlows.forEach(flow => {
-        const entry = entityLayoutMap.get(flow.sourceNodeId);
-        if (entry) entry.incoming.push(flow.id);
+        flowsByEntityId.get(flow.sourceNodeId)?.incoming.push(flow.id);
     });
 
     outgoingFlows.forEach(flow => {
-        const entry = entityLayoutMap.get(flow.targetNodeId);
-        if (entry) entry.outgoing.push(flow.id);
+        flowsByEntityId.get(flow.targetNodeId)?.outgoing.push(flow.id);
+    });
+
+    const { entityLayouts, requiredProcessDiameter } = computeContextDiagramLayout(
+        entityNodes.map(entity => {
+            const flows = flowsByEntityId.get(entity.id);
+            return {
+                inFlowCount: flows?.incoming.length ?? 0,
+                outFlowCount: flows?.outgoing.length ?? 0,
+            };
+        })
+    );
+
+    const entityLayoutMap = new Map<string, { layout: EntityLayoutInfo; incoming: string[]; outgoing: string[] }>();
+    entityNodes.forEach((entity, index) => {
+        const flows = flowsByEntityId.get(entity.id)!;
+        entityLayoutMap.set(entity.id, { layout: entityLayouts[index], ...flows });
     });
 
     // Generate handles with nested rectangle ordering
@@ -260,10 +181,12 @@ export const ContextProcessNode = ({ data, selected }: NodeProps<ProcessNodeType
     });
 
     // COLLISION RESOLUTION
+    //
+    // Sections are already wide enough for the handles they hold, so this only
+    // has to separate handles a user has dragged on top of one another via
+    // sourceAngleOffset / targetAngleOffset.
     const distributedHandles: ProcessHandle[] = [];
-    const minGapPx = 25;
-    const minGapRad = minGapPx / circleRadius;
-    const minGapDeg = minGapRad * (180 / Math.PI);
+    const minGapDeg = (HANDLE_SPACING_PX / circleRadius) * (180 / Math.PI);
 
     const sections = new Map<string, ProcessHandle[]>();
     rawHandles.forEach(h => {
@@ -272,25 +195,16 @@ export const ContextProcessNode = ({ data, selected }: NodeProps<ProcessNodeType
         sections.get(key)!.push(h);
     });
 
-    let resizeNeeded = false;
-    let requiredDiameter = diameter;
-
-    sections.forEach((handlesInSection, key) => {
+    sections.forEach((handlesInSection) => {
         if (handlesInSection.length < 2) {
             handlesInSection.forEach(h => distributedHandles.push(h));
             return;
         }
 
-        const [startStr, endStr] = key.split('-');
-        const start = parseFloat(startStr);
-        const end = parseFloat(endStr);
-
-        handlesInSection.sort((a, b) => a.angle - b.angle);
+        const localHandles = [...handlesInSection].sort((a, b) => a.angle - b.angle);
 
         let changed = true;
         let iter = 0;
-        const localHandles = [...handlesInSection];
-
         while (changed && iter < 10) {
             changed = false;
             iter++;
@@ -311,35 +225,29 @@ export const ContextProcessNode = ({ data, selected }: NodeProps<ProcessNodeType
         }
 
         localHandles.forEach(h => distributedHandles.push(h));
-
-        // Check capacity
-        const count = localHandles.length;
-        const totalNeededSpanDeg = count * minGapDeg;
-        const availableSpanDeg = Math.abs(end - start);
-
-        if (totalNeededSpanDeg > availableSpanDeg) {
-            const availableSpanRad = availableSpanDeg * (Math.PI / 180);
-            const neededArcLen = count * (minGapPx + 5);
-            const neededR = neededArcLen / availableSpanRad;
-            const neededD = neededR * 2;
-
-            if (neededD > requiredDiameter) {
-                requiredDiameter = neededD;
-                resizeNeeded = true;
-            }
-        }
     });
 
-    // Auto-resize
+    // Auto-resize to whatever the current flow count needs.
+    //
+    // Growing is mandatory — too small a circle crowds the handles. Shrinking is
+    // only done while the diameter is still the automatic one: it reclaims space
+    // the layout itself asked for, including on a diagram saved before the
+    // sections were allocated by flow count, without overriding a size the user
+    // set by dragging the resize handles.
+    const wasManuallyResized = useRef(false);
+
     useEffect(() => {
         if (draggingHandleId) return;
-        if (resizeNeeded && requiredDiameter > diameter) {
-            const timer = setTimeout(() => {
-                updateNode(data.id, { diameter: Math.round(requiredDiameter) });
-            }, 300);
-            return () => clearTimeout(timer);
-        }
-    }, [resizeNeeded, requiredDiameter, diameter, draggingHandleId, updateNode, data.id]);
+
+        const isTooSmall = diameter < requiredProcessDiameter;
+        const canReclaimSpace = diameter > requiredProcessDiameter && !wasManuallyResized.current;
+        if (!isTooSmall && !canReclaimSpace) return;
+
+        const timer = setTimeout(() => {
+            updateNode(data.id, { diameter: requiredProcessDiameter });
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [requiredProcessDiameter, diameter, draggingHandleId, updateNode, data.id]);
 
     // Position helper
     const getHandlePosition = (angle: number) => {
@@ -414,7 +322,9 @@ export const ContextProcessNode = ({ data, selected }: NodeProps<ProcessNodeType
         return () => clearTimeout(t);
     }, [distributedHandles.length, diameter, data.id, updateNodeInternals, diagram.edges]);
 
-    const onResize = (_event: any, params: any) => {
+    const onResize = (_event: unknown, params: { width: number; height: number }) => {
+        // Stops the automatic sizing from undoing the size just chosen.
+        wasManuallyResized.current = true;
         const newDiameter = Math.round(Math.max(params.width, params.height));
         updateNode(data.id, { diameter: newDiameter });
     };
@@ -498,7 +408,3 @@ export const ContextProcessNode = ({ data, selected }: NodeProps<ProcessNodeType
         </div>
     );
 };
-
-// Export the layout function for use by EntityNode
-export { getEntityLayoutInfo };
-export type { EntityLayoutInfo, Quadrant };

@@ -1,0 +1,7 @@
+system,entity,in_flow,out_flow
+Restaurant ERP,Customer,Order Request,Order Confirmation
+,Customer,Payment Details,Receipt
+,Waiter,Table Order,Kitchen Ticket
+,Kitchen Staff,Dish Ready Notice,Preparation Queue
+,Supplier,"Delivery Note, Signed",Purchase Order
+,Manager,Report Request,Daily Sales Report
