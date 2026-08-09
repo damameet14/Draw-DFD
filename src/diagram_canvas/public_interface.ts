@@ -9,6 +9,7 @@
 export { DataFlowDiagramCanvas } from './DataFlowDiagramCanvas';
 export { DiagramCanvasProvider } from './DiagramCanvasProvider';
 export { useDiagramImageRenderer } from './useDiagramImageRenderer';
+export { useDrawIoDiagramExporter } from './useDrawIoDiagramExporter';
 
 /**
  * Context diagram geometry. Exported because `diagram_authoring` assigns a node's

@@ -35,6 +35,18 @@ export function downloadDiagramAsFile(diagram: DFDDiagram): void {
     }
 }
 
+/** Saves already-serialised draw.io XML as a `.drawio` file. */
+export function downloadDrawIoDocument(drawIoXml: string, diagramName: string): void {
+    const blob = new Blob([drawIoXml], { type: 'application/xml' });
+    const objectUrl = URL.createObjectURL(blob);
+
+    try {
+        triggerDownload(objectUrl, toDiagramFileName(diagramName, 'drawio'));
+    } finally {
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    }
+}
+
 /** Saves an already-rendered image (a data URL) under the diagram's name. */
 export function downloadImageDataUrl(dataUrl: string, diagramName: string, extension: string): void {
     triggerDownload(dataUrl, toDiagramFileName(diagramName, extension));

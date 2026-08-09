@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Download, FilePlus2, FolderOpen, Image, Save } from 'lucide-react';
+import { Download, FilePlus2, FolderOpen, Image, Save, Shapes } from 'lucide-react';
 import { useDiagramStore } from '../diagram_state/public_interface';
-import { useDiagramImageRenderer } from '../diagram_canvas/public_interface';
+import { useDiagramImageRenderer, useDrawIoDiagramExporter } from '../diagram_canvas/public_interface';
 import {
     clearAutosavedDiagram,
     downloadDiagramAsFile,
+    downloadDrawIoDocument,
     downloadImageDataUrl,
     pickAndReadDiagramFile,
 } from '../diagram_persistence/public_interface';
@@ -29,6 +30,7 @@ export function DiagramDocumentActions() {
     const loadDiagram = useDiagramStore((state) => state.loadDiagram);
     const resetDiagram = useDiagramStore((state) => state.resetDiagram);
     const renderDiagramImage = useDiagramImageRenderer();
+    const exportDrawIoDocument = useDrawIoDiagramExporter();
 
     const [status, setStatus] = useState<StatusMessage | null>(null);
     const [isExporting, setIsExporting] = useState(false);
@@ -74,6 +76,18 @@ export function DiagramDocumentActions() {
         }
     }, [renderDiagramImage, diagram.name]);
 
+    const handleExportDrawIo = useCallback(() => {
+        try {
+            downloadDrawIoDocument(exportDrawIoDocument(), diagram.name);
+            setStatus({ tone: 'success', text: 'draw.io file exported to your downloads.' });
+        } catch (error) {
+            setStatus({
+                tone: 'error',
+                text: error instanceof Error ? error.message : 'The diagram could not be exported.',
+            });
+        }
+    }, [exportDrawIoDocument, diagram.name]);
+
     const handleReset = useCallback(() => {
         const isConfirmed = window.confirm(
             'Start a new diagram? Everything on all three levels will be discarded. ' +
@@ -105,6 +119,14 @@ export function DiagramDocumentActions() {
             >
                 {isExporting ? <Download size={16} /> : <Image size={16} />}
                 <span>{isExporting ? 'Exporting…' : 'PNG'}</span>
+            </button>
+            <button
+                className={styles.actionButton}
+                onClick={handleExportDrawIo}
+                title="Export the current level as an editable draw.io file"
+            >
+                <Shapes size={16} />
+                <span>draw.io</span>
             </button>
             <button className={styles.actionButton} onClick={handleReset} title="Discard everything and start over">
                 <FilePlus2 size={16} />

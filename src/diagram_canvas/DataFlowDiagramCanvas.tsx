@@ -19,6 +19,7 @@ import {
     type ValidationResult,
 } from '../data_flow_diagram_model/public_interface';
 import { selectNodeTypesForLevel, dataFlowEdgeTypes } from './canvasNodeAndEdgeRegistry';
+import { planDecomposedLevelLayout } from './decomposedLevelLayout';
 import styles from './DataFlowDiagramCanvas.module.css';
 
 const DATA_FLOW_STROKE_COLOR = '#1e293b';
@@ -97,6 +98,22 @@ export const DataFlowDiagramCanvas = ({
 
     const nodeTypes = useMemo(() => selectNodeTypesForLevel(currentLevel), [currentLevel]);
 
+    /**
+     * Levels 1 and 2 are laid out and routed by the editor rather than by hand.
+     * Positions, sizes, handle placement and every flow path come from here, and
+     * the stored `position` of a node on those levels is not consulted.
+     *
+     * Level 0 keeps its own arrangement, so this is `null` there.
+     */
+    const decomposedLayout = useMemo(() => {
+        if (currentLevel === 0) return null;
+
+        return planDecomposedLevelLayout(
+            diagram.nodes.filter((node) => node.level === currentLevel),
+            diagram.edges.filter((edge) => edge.level === currentLevel)
+        );
+    }, [diagram.nodes, diagram.edges, currentLevel]);
+
     const severityByElementId = useMemo(
         () => mapWorstSeverityByElementId(validationFindings),
         [validationFindings]
@@ -124,12 +141,26 @@ export const DataFlowDiagramCanvas = ({
                 .filter(Boolean)
                 .join(' ');
 
+            const placement = decomposedLayout?.nodes.get(node.id);
+
             return {
                 id: node.id,
                 type: node.type,
-                position: node.position,
-                data: { ...node },
-                draggable: true,
+                position: placement ? { x: placement.box.x, y: placement.box.y } : node.position,
+                data: {
+                    ...node,
+                    // The layout owns the size on a decomposed level, so it is
+                    // written over whatever the node carries.
+                    ...(placement && {
+                        width: placement.box.width,
+                        height: placement.box.height,
+                        ...(node.type === 'process' && { diameter: placement.box.width }),
+                    }),
+                    layoutHandles: placement?.handles,
+                },
+                // Dragging a node would move it out from under its routes, and
+                // the next render would put it straight back.
+                draggable: !placement,
                 selectable: true,
                 focusable: true,
                 className: validationClassName || undefined,
@@ -164,7 +195,7 @@ export const DataFlowDiagramCanvas = ({
                     width: 25,
                     height: 25,
                 },
-                data: { ...edge },
+                data: { ...edge, route: decomposedLayout?.flows.get(edge.id) },
             };
         });
 
@@ -174,6 +205,7 @@ export const DataFlowDiagramCanvas = ({
         diagram.nodes,
         diagram.edges,
         currentLevel,
+        decomposedLayout,
         severityByElementId,
         focusedElementId,
         setNodes,

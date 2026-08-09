@@ -5,9 +5,9 @@ import { ContextProcessNode } from './process_node/ContextProcessNode';
 import { ContextEntityNode } from './entity_node/ContextEntityNode';
 import { ContextDataStoreNode } from './data_store_node/ContextDataStoreNode';
 
-import { DecomposedProcessNode } from './process_node/DecomposedProcessNode';
-import { DecomposedEntityNode } from './entity_node/DecomposedEntityNode';
-import { DecomposedDataStoreNode } from './data_store_node/DecomposedDataStoreNode';
+import { PlannedProcessNode } from './process_node/PlannedProcessNode';
+import { PlannedEntityNode } from './entity_node/PlannedEntityNode';
+import { PlannedDataStoreNode } from './data_store_node/PlannedDataStoreNode';
 
 import { DataFlowOrthogonalEdge } from './data_flow_edge/DataFlowOrthogonalEdge';
 
@@ -20,6 +20,12 @@ import { DataFlowOrthogonalEdge } from './data_flow_edge/DataFlowOrthogonalEdge'
  * levels previously had byte-identical duplicate component trees under
  * `level1/` and `level2/`; they are one implementation now, and the components
  * distinguish levels at runtime via each node's `level` field.
+ *
+ * The decomposed renderers draw a shape and nothing more. Levels 1 and 2 are
+ * arranged and routed by `planDecomposedLevelLayout`, which owns every position,
+ * size and handle on those levels, so the components have no geometry of their
+ * own to work out. Level 0's renderers still do, since its ring of entities is
+ * arranged by hand.
  */
 
 const contextLevelNodeTypes: NodeTypes = {
@@ -31,10 +37,10 @@ const contextLevelNodeTypes: NodeTypes = {
 };
 
 const decomposedLevelNodeTypes: NodeTypes = {
-    process: DecomposedProcessNode,
-    entity: DecomposedEntityNode,
-    datastore: DecomposedDataStoreNode,
-    process_ref: DecomposedEntityNode,
+    process: PlannedProcessNode,
+    entity: PlannedEntityNode,
+    datastore: PlannedDataStoreNode,
+    process_ref: PlannedEntityNode,
 };
 
 /**

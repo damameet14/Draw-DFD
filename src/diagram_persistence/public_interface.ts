@@ -17,7 +17,16 @@ export {
 } from './dataFlowDiagramDocument';
 
 export {
+    serializeDrawIoDocument,
+    type CanvasPoint,
+    type DrawIoFlowRoute,
+    type DrawIoPage,
+    type DrawIoShapePlacement,
+} from './drawIoDiagramExport';
+
+export {
     downloadDiagramAsFile,
+    downloadDrawIoDocument,
     downloadImageDataUrl,
     pickAndReadDiagramFile,
     pickAndReadTextFile,

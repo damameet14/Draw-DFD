@@ -5,6 +5,11 @@ import { RotateCw } from 'lucide-react';
 import { useDiagramVisibilityPreferences } from '../../application_shell/public_interface';
 import { DEFAULT_FLOW_LABEL_TEXT_SIZE_PX } from '../contextDiagramGeometry';
 
+interface PlannedRoute {
+    points: { x: number; y: number }[];
+    labelPoint: { x: number; y: number };
+}
+
 export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
     id,
     sourceX,
@@ -16,6 +21,7 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
     label,
     markerEnd,
     style,
+    data,
     selected // Capture selected prop
 }) => {
     // Subscribing to just this one edge keeps a keystroke anywhere in the
@@ -46,12 +52,25 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
     let labelX = 0;
     let labelY = 0;
 
+    /**
+     * On a decomposed level the path is planned for the whole diagram at once —
+     * lanes are allocated so that no two flows lie along each other — so it is
+     * drawn exactly as planned rather than being worked out again from the two
+     * endpoints in isolation.
+     */
+    const plannedRoute = (data as { route?: PlannedRoute } | undefined)?.route;
+
     // Check for Level 2
     const isLevel2 = edge?.level === 2;
     // Smart Routing is active for Level 2 if direction is not explicitly set to manual (H/V) or explicitly 'smart'
     const useSmartRouting = isLevel2 && (!storedDirection || storedDirection === 'smart');
 
-    if (useSmartRouting) {
+    if (plannedRoute) {
+        const [first, ...rest] = plannedRoute.points;
+        path = `M ${first.x},${first.y}` + rest.map((point) => ` L ${point.x},${point.y}`).join('');
+        labelX = plannedRoute.labelPoint.x;
+        labelY = plannedRoute.labelPoint.y;
+    } else if (useSmartRouting) {
         // --- LEVEL 2: Step Edge Logic (Smart/Auto) ---
         const [stepPath, centerX, centerY] = getSmoothStepPath({
             sourceX, sourceY, sourcePosition,
@@ -195,6 +214,7 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
     const handleLabelClick = (e: React.MouseEvent) => {
         e.stopPropagation();
         e.preventDefault();
+        if (plannedRoute) return;
         setIsLabelSelected(true);
     };
 
@@ -230,7 +250,9 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
     }, [isLabelSelected, labelOffset, id, updateEdge]);
 
     // Button visibility: Global toggle OR Selected (Always allow, control internal logic)
-    const isButtonVisible = areArrowDirectionButtonsVisible || selected;
+    // A planned route has no direction to flip and no label to nudge: the layout
+    // decides both, and a manual change would be overwritten on the next render.
+    const isButtonVisible = !plannedRoute && (areArrowDirectionButtonsVisible || selected);
 
     return (
         <>
@@ -242,6 +264,10 @@ export const DataFlowOrthogonalEdge: FC<EdgeProps> = ({
             />
             <EdgeLabelRenderer>
                 <div
+                    // The wrapper is centred on the point this edge puts its
+                    // label at, which is what the draw.io export reads to place
+                    // the label on the same spot along the path.
+                    data-flow-label-for={id}
                     style={{
                         position: 'absolute',
                         transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
