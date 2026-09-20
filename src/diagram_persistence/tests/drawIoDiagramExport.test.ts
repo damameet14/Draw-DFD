@@ -203,6 +203,17 @@ describe('serializeDrawIoDocument', () => {
         expect(styleValue(cell, 'entryPerimeter')).toBe('0');
     });
 
+    it('leaves the routing to the waypoints rather than to a router', () => {
+        const document = parseExport(serializeDrawIoDocument([buildPage()]));
+        const cell = cellById(document, 'flow-0');
+
+        // No edgeStyle: draw.io's default connector joins the waypoints with
+        // straight segments and so reproduces the canvas exactly, where a router
+        // of its own would add jogs.
+        expect(styleValue(cell, 'edgeStyle')).toBeUndefined();
+        expect(styleValue(cell, 'rounded')).toBe('0');
+    });
+
     it('carries the corners over as waypoints, without repeating the ends', () => {
         const document = parseExport(serializeDrawIoDocument([buildPage()]));
         const waypoints = [...cellById(document, 'flow-0').querySelectorAll('Array[as="points"] mxPoint')];

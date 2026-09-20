@@ -485,3 +485,10 @@
     font-weight: 600;
     color: #15803d;
 }
+
+/* Arrows in the import hint, which carry the meaning of the four flow columns
+   and so should not fade into the surrounding text. */
+.importArrow {
+    color: #334155;
+    font-weight: 700;
+}

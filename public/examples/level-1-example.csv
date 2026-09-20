@@ -1,20 +1,37 @@
-process,type,name,in_flow,out_flow
-Registration,entity,Visitor,Registration Details,Registration Acknowledgement
-Registration,datastore,User_Tbl,,Registration Details
-Login,entity,Admin,Login Credentials,Login Acknowledgement
-Login,entity,Farmer,Login Credentials,Login Acknowledgement
-Login,entity,Agricultural Expert,Login Credentials,Login Acknowledgement
-Login,datastore,User_Tbl,Login Details,Validate Login Credentials
-Manage user,entity,Admin,Manage Employee,Employee Details
-Manage user,entity,Farmer,Manage Profile Details,Profile Details
-Manage user,datastore,User_Tbl,Profile Details,Manage Profile Details
-Manage farm,entity,Farmer,Manage Farm Details,Farm Details
-Manage farm,datastore,Farm_Tbl,Farm Details,Manage Farm Details
-AI Crop Diagnosis,entity,Farmer,Upload Image,Prediction Details
-AI Crop Diagnosis,entity,Agricultural Expert,Request AI Crop Analysis,AI Crop Analysis
-AI Crop Diagnosis,datastore,Farm_Tbl,Farm Details,
-AI Crop Diagnosis,datastore,Prediction_Tbl,Crop Diagnosis Details,Request AI Crop Analysis
-AI Crop Diagnosis,process,Manage Recommendation,,Diagnosis Result
-Manage Recommendation,entity,Agricultural Expert,Manage Recommendations,Recommendation Details
-Manage Recommendation,entity,Farmer,View Recommendations,Display Recommendations
-Manage Recommendation,datastore,Advisory_Tbl,Recommendation Details,Manage Recommendations
+process_name,entity_name,in_flow,out_flow,data_store,data_store_inflow,data_store_outflow
+1.0 Registration,Visitor,Registration Details,Registration Acknowledgement,User_Details_TBL,Registration Details,Registration Acknowledgement
+2.0 Login,Admin,Login Details,Login Acknowledgement,User_Details_TBL,Login Details,Login Acknowledgement
+2.0 Login,Employee,Login Details,Login Acknowledgement,User_Details_TBL,Login Details,Login Acknowledgement
+2.0 Login,Delivery Agent,Login Details,Login Acknowledgement,User_Details_TBL,Login Details,Login Acknowledgement
+2.0 Login,Customer,Login Details,Login Acknowledgement,User_Details_TBL,Login Details,Login Acknowledgement
+3.0 Profile Management,Admin,Manage Profile,Profile Details,User_Details_TBL,Profile Details,Profile Details
+3.0 Profile Management,Admin,Manage Employee,Employee Details,User_Details_TBL,Employee Details,Employee Details
+3.0 Profile Management,Admin,Manage Delivery Agent,Delivery Agent Details,User_Details_TBL,Delivery Agent Details,Delivery Agent Details
+3.0 Profile Management,Employee,Manage Profile,Profile Details,User_Details_TBL,Profile Details,Profile Details
+3.0 Profile Management,Delivery Agent,Manage Profile,Profile Details,User_Details_TBL,Profile Details,Profile Details
+3.0 Profile Management,Customer,Manage Profile,Profile Details,User_Details_TBL,Profile Details,Profile Details
+4.0 Category Management,Admin,Manage Category,Category Details,Category_TBL,Category Details,Category Details
+4.0 Category Management,Visitor,View Category,Category Details,Category_TBL,Category Details,Category Details
+4.0 Category Management,Customer,View Category,Category Details,Category_TBL,Category Details,Category Details
+5.0 Product Management,Admin,Manage Product,Product Details,Product_TBL,Product Details,Product Details
+5.0 Product Management,Employee,Update Stock,Stock Acknowledgement,Product_TBL,Stock Details,Stock Acknowledgement
+5.0 Product Management,Visitor,View Product,Product Details,Product_TBL,Product Details,Product Details
+5.0 Product Management,Customer,View Product,Product Details,Product_TBL,Product Details,Product Details
+6.0 Order & Return Management,Visitor,Manage Cart,Cart Details,Cart_TBL,Cart Details,Cart Details
+6.0 Order & Return Management,Customer,Manage Cart,Cart Details,Cart_TBL,Cart Details,Cart Details
+6.0 Order & Return Management,Customer,Manage Order,Order Details,Order_TBL,Order Details,Order Details
+6.0 Order & Return Management,Customer,Manage Return Request,Return Request Details,Return_TBL,Return Request Details,Return Request Details
+6.0 Order & Return Management,Employee,View Order,Order Details,Order_TBL,Order Details,Order Details
+6.0 Order & Return Management,Employee,Update Order Status,Order Status Acknowledgement,Order_TBL,Order Status Details,Order Status Acknowledgement
+6.0 Order & Return Management,Employee,Update Return Status,Return Status Acknowledgement,Return_TBL,Return Status Details,Return Status Acknowledgement
+7.0 Payment Management,Customer,Make Payment,Payment Acknowledgement,Payment_TBL,Payment Details,Payment Acknowledgement
+7.0 Payment Management,Employee,View Payment,Payment Details,Payment_TBL,Payment Details,Payment Details
+8.0 Delivery Management,Employee,Assign Delivery Agent,Assignment Acknowledgement,Delivery_TBL,Delivery Details,Assignment Acknowledgement
+8.0 Delivery Management,Delivery Agent,View Assigned Delivery,Assigned Delivery Details,Delivery_TBL,Delivery Details,Assigned Delivery Details
+8.0 Delivery Management,Delivery Agent,Update Delivery Status,Delivery Status Acknowledgement,Delivery_TBL,Delivery Status Details,Delivery Status Acknowledgement
+8.0 Delivery Management,Delivery Agent,View Return Pickup,Return Pickup Details,Return_TBL,Return Pickup Details,Return Pickup Details
+8.0 Delivery Management,Delivery Agent,Update Return Pickup Status,Return Pickup Status Acknowledgement,Return_TBL,Return Pickup Status Details,Return Pickup Status Acknowledgement
+8.0 Delivery Management,Customer,Track Delivery Status,Delivery Status Details,Delivery_TBL,Delivery Status Details,Delivery Status Details
+9.0 Review Management,Customer,Manage Reviews,Review Details,Review_TBL,Review Details,Review Details
+9.0 Review Management,Visitor,View Reviews,Review Details,Review_TBL,Review Details,Review Details
+9.0 Review Management,Employee,View Reviews,Review Details,Review_TBL,Review Details,Review Details

@@ -239,12 +239,26 @@ export const ProcessDecompositionForm = () => {
                     <h3 className={styles.globalTitle}>Import from CSV</h3>
 
                     <p className={styles.importHint}>
-                        One row per process and the thing it exchanges data with, using the columns{' '}
-                        <code>process</code>, <code>type</code>, <code>name</code>,{' '}
-                        <code>in_flow</code>, and <code>out_flow</code>. <code>type</code> is{' '}
-                        <code>entity</code>, <code>datastore</code>, or <code>process</code>, and
-                        the two flow columns are read from the process's side — what it receives and
-                        what it sends. Leave one empty for a one-way flow.
+                        Columns: <code>process_name</code>, <code>entity_name</code>,{' '}
+                        <code>in_flow</code>, <code>out_flow</code>, <code>data_store</code>,{' '}
+                        <code>data_store_inflow</code>, <code>data_store_outflow</code>.
+                    </p>
+
+                    <p className={styles.importHint}>
+                        One row is one process's exchange with one entity and one data store, and
+                        the flows read along the chain — entity{' '}
+                        <span className={styles.importArrow}>→</span> process{' '}
+                        <span className={styles.importArrow}>→</span> store, then back:{' '}
+                        <code>in_flow</code> reaches the process, <code>out_flow</code> returns to
+                        the entity, <code>data_store_inflow</code> is written to the store, and{' '}
+                        <code>data_store_outflow</code> comes back from it.
+                    </p>
+
+                    <p className={styles.importHint}>
+                        Put the number in the name (<code>1.0 Registration</code>) to order the
+                        processes; rows naming the same process share one circle. Leave the entity
+                        columns or the store columns blank for a row that only uses the other, and
+                        leave one direction blank for a one-way flow.
                     </p>
 
                     <div className={styles.importActions}>

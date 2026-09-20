@@ -37,6 +37,18 @@ import { type CanvasPosition } from './contextDiagramGeometry';
  * and every remaining intersection is a horizontal meeting a vertical at a right
  * angle.
  *
+ * ## Keeping a flow easy to follow
+ *
+ * Each entity and data store is placed level with the average height of the
+ * processes it deals with, and its flows are ordered by the height of the shape
+ * at their far end. A flow's two ends then sit at nearly the same height, and a
+ * short vertical run crosses few horizontals — which is what actually removes
+ * crossings. Reordering a column on its own does not: it moves the long runs
+ * around rather than shortening them.
+ *
+ * The process column keeps its own numbered order and anchors the level, so 1.0
+ * stays above 2.0 whatever the flows do.
+ *
  * ## Flows this cannot place
  *
  * A flow between two columns that do not touch — an entity wired straight to a
@@ -61,14 +73,18 @@ const LANE_PITCH_PX = 32;
 /**
  * Clear space between a column and the first lane beside it.
  *
- * Wide, because this is the stretch every flow label sits in: a label is placed
- * halfway along the run out of its shape, so a short run would leave a long
- * label hanging back over the shape it belongs to.
+ * Wide, because this is the stretch the flow labels sit in, and they are read
+ * against the entity or store beside them rather than squeezed into a gap.
  */
 const GUTTER_MARGIN_PX = 220;
 
-/** How far a label keeps away from the shape its flow leaves. */
-const MIN_LABEL_DISTANCE_PX = 110;
+/**
+ * How far a label sits from the entity or data store it belongs beside.
+ *
+ * Fixed rather than proportional, so the labels on one shape form a tidy column
+ * next to it instead of fanning outwards with their lanes.
+ */
+const LABEL_DISTANCE_PX = 150;
 
 /** Vertical gap between two shapes stacked in the same column. */
 const SHAPE_GAP_PX = 72;
@@ -120,7 +136,11 @@ export interface NodeLayout {
 export interface FlowRoute {
     /** Canvas coordinates: shape, lane, lane, shape. */
     points: CanvasPosition[];
-    /** Sits on the segment leaving the source, the way a reader scans it. */
+    /**
+     * Sits on the run of the flow that meets the entity or the data store, so a
+     * label is always read beside the thing it describes rather than beside the
+     * process, which every flow on the level converges on.
+     */
     labelPoint: CanvasPosition;
 }
 
@@ -301,6 +321,93 @@ interface StackedShape {
     y: number;
 }
 
+/** The height a flow meets the shape at its far end, if that end has one yet. */
+type PartnerHeightLookup = (nodeId: string, attachment: Attachment) => number | null;
+
+/**
+ * Re-orders a shape's flows to follow the heights of the shapes at their far
+ * ends, and reports the height this shape wants to sit at.
+ *
+ * Both halves of an interaction move together, so the pairing survives the sort:
+ * a pair is ordered by the average height of its own two ends, never split.
+ */
+function alignAttachmentsToPartners(
+    shape: StackedShape,
+    partnerHeightOf: PartnerHeightLookup
+): number | null {
+    const groups = new Map<string, { attachments: Attachment[]; heights: number[] }>();
+
+    shape.attachments.forEach((attachment) => {
+        const group = groups.get(attachment.pairKey) ?? { attachments: [], heights: [] };
+        group.attachments.push(attachment);
+
+        const height = partnerHeightOf(shape.node.id, attachment);
+        if (height !== null) group.heights.push(height);
+
+        groups.set(attachment.pairKey, group);
+    });
+
+    const meanOf = (heights: number[]) =>
+        heights.length ? heights.reduce((sum, value) => sum + value, 0) / heights.length : null;
+
+    // A pair whose far end has no height — a flow the layout cannot route — keeps
+    // to the end rather than dragging the shape anywhere.
+    const ordered = [...groups.values()].sort((a, b) => {
+        const [aMean, bMean] = [meanOf(a.heights), meanOf(b.heights)];
+        if (aMean === null) return bMean === null ? 0 : 1;
+        if (bMean === null) return -1;
+        return aMean - bMean;
+    });
+
+    shape.attachments = ordered.flatMap((group) => group.attachments);
+
+    return meanOf(ordered.flatMap((group) => group.heights));
+}
+
+/**
+ * Places a column level with the flows arriving from the column beside it.
+ *
+ * Each shape wants to sit at the average height of the processes it talks to,
+ * which keeps a flow's two ends at nearly the same height. That is what removes
+ * crossings: a vertical run crosses every horizontal it passes, so shortening
+ * the runs removes crossings outright, where reordering a column only moves them
+ * around. On the example diagram this is the difference between 3320 crossings
+ * and under a thousand, and it needs a third of the lanes.
+ *
+ * Two shapes wanting the same height is settled by taking them in the order they
+ * asked for and packing downwards, so the column keeps that order and nothing
+ * overlaps.
+ */
+function alignColumn(
+    shapes: StackedShape[],
+    partnerHeightOf: PartnerHeightLookup
+): StackedShape[] {
+    const wanted = new Map<string, number>();
+
+    shapes.forEach((shape) => {
+        const target = alignAttachmentsToPartners(shape, partnerHeightOf);
+        if (target !== null) wanted.set(shape.node.id, target);
+    });
+
+    // A shape with nothing routable attached has no opinion, so it goes below the
+    // ones that do rather than displacing them.
+    const inColumnOrder = [
+        ...shapes
+            .filter((shape) => wanted.has(shape.node.id))
+            .sort((a, b) => wanted.get(a.node.id)! - wanted.get(b.node.id)!),
+        ...shapes.filter((shape) => !wanted.has(shape.node.id)),
+    ];
+
+    let cursor = CANVAS_MARGIN_PX;
+    inColumnOrder.forEach((shape) => {
+        const wantedTop = (wanted.get(shape.node.id) ?? cursor) - shape.height / 2;
+        shape.y = Math.max(cursor, wantedTop);
+        cursor = shape.y + shape.height + SHAPE_GAP_PX;
+    });
+
+    return inColumnOrder;
+}
+
 /** Stacks one column from the top, returning the shapes with their heights set. */
 function stackColumn(
     nodes: DFDNode[],
@@ -396,23 +503,15 @@ export function planDecomposedLevelLayout(
 
     // Heights first: nothing about them depends on the horizontal placement,
     // which is what lets the lanes be counted before the columns are spaced.
-    const participantShapes = stackColumn(
-        participants,
-        attachmentsByNodeId,
-        LAYOUT_ENTITY_WIDTH_PX,
-        (count) => Math.max(MIN_ENTITY_HEIGHT_PX, heightForHandleCount(count))
-    );
+    //
+    // The process column is stacked in its own numbered order and anchors the
+    // level, so 1.0 stays above 2.0; the entities and the stores are then placed
+    // to meet the flows those processes hold.
     const processShapes = stackColumn(
         processes,
         attachmentsByNodeId,
         processDiameter,
         () => processDiameter
-    );
-    const dataStoreShapes = stackColumn(
-        dataStores,
-        attachmentsByNodeId,
-        LAYOUT_DATA_STORE_WIDTH_PX,
-        (count) => Math.max(MIN_DATA_STORE_HEIGHT_PX, heightForHandleCount(count))
     );
 
     // Handle heights, on the grid. The outer columns take the even rows and the
@@ -435,9 +534,40 @@ export function planDecomposedLevelLayout(
         });
     };
 
-    assignHandleHeights(participantShapes, 0);
     assignHandleHeights(processShapes, 1);
-    assignHandleHeights(dataStoreShapes, 0);
+
+    const endpointsByEdgeId = new Map(
+        edges.map((edge) => [edge.id, [edge.sourceNodeId, edge.targetNodeId]] as const)
+    );
+    const partnerHeightOf: PartnerHeightLookup = (nodeId, attachment) => {
+        const endpoints = endpointsByEdgeId.get(attachment.edgeId);
+        if (!endpoints) return null;
+        const partnerId = endpoints[0] === nodeId ? endpoints[1] : endpoints[0];
+        return handleYByKey.get(`${partnerId}:${attachment.edgeId}`) ?? null;
+    };
+
+    const placeAgainstProcesses = (shapes: StackedShape[]) => {
+        const aligned = alignColumn(shapes, partnerHeightOf);
+        assignHandleHeights(aligned, 0);
+        return aligned;
+    };
+
+    const participantShapes = placeAgainstProcesses(
+        stackColumn(
+            participants,
+            attachmentsByNodeId,
+            LAYOUT_ENTITY_WIDTH_PX,
+            (count) => Math.max(MIN_ENTITY_HEIGHT_PX, heightForHandleCount(count))
+        )
+    );
+    const dataStoreShapes = placeAgainstProcesses(
+        stackColumn(
+            dataStores,
+            attachmentsByNodeId,
+            LAYOUT_DATA_STORE_WIDTH_PX,
+            (count) => Math.max(MIN_DATA_STORE_HEIGHT_PX, heightForHandleCount(count))
+        )
+    );
 
     // Lanes, now that both ends of every flow have a height.
     const routableEdges = edges.filter((edge) => {
@@ -542,20 +672,25 @@ export function planDecomposedLevelLayout(
             y: targetLayout.box.y + targetHandle.y,
         };
 
-        // Halfway along the run leaving the source, which is the empty stretch
-        // of gutter beside the shape the flow belongs to — but held clear of
-        // that shape, and short of the corner, when the run is a short one.
-        const runLength = Math.abs(laneX - start.x);
-        const labelDistance = Math.min(
-            Math.max(runLength / 2, Math.min(MIN_LABEL_DISTANCE_PX, runLength)),
-            runLength
-        );
+        // The label goes beside the entity or the data store, never beside the
+        // process, whichever end of the flow that happens to be. A process
+        // gathers flows from every direction, so labels collected there say
+        // little; read beside the entity they name what that entity sends and
+        // gets back, and the pair of a request and its answer ends up one above
+        // the other on the same side of the same box.
+        const outerEnd = columnOf(source) !== 'process' ? start : columnOf(target) !== 'process' ? end : start;
+
+        // Held at a fixed distance rather than halfway along, so every label on
+        // one shape lines up in a column beside it however far out its flow's
+        // lane happens to be.
+        const runLength = Math.abs(laneX - outerEnd.x);
+        const labelDistance = Math.min(LABEL_DISTANCE_PX, Math.max(0, runLength - LANE_PITCH_PX / 4));
 
         flows.set(edge.id, {
             points: [start, { x: laneX, y: start.y }, { x: laneX, y: end.y }, end],
             labelPoint: {
-                x: start.x + Math.sign(laneX - start.x) * labelDistance,
-                y: start.y,
+                x: outerEnd.x + Math.sign(laneX - outerEnd.x) * labelDistance,
+                y: outerEnd.y,
             },
         });
     });

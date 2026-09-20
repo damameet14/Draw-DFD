@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronRight, Upload, Download } from 'lucide-react';
 import { useDiagramStore } from '../diagram_state/public_interface';
+import { pickAndReadTextFile } from '../diagram_persistence/public_interface';
 import {
     type DFDNode,
     type DataStoreNode,
@@ -18,9 +19,16 @@ import {
     type ProcessAuthoringModel,
     type ProcessFlowDirection,
 } from './deriveProcessAuthoringModel';
+import {
+    importDecompositionFromCsv,
+    type DecompositionCsvImportSummary,
+} from './importDecompositionFromCsv';
 import styles from './DecompositionForm.module.css';
 
 const LEVEL = 2;
+
+/** Ships in `public/`, so it follows the app's base path when deployed. */
+const EXAMPLE_CSV_URL = `${import.meta.env.BASE_URL}examples/level-2-example.csv`;
 
 /**
  * Level 2 authoring: the sub-processes of one parent process, plus the
@@ -41,6 +49,7 @@ export const SubProcessDecompositionForm = () => {
     const addEdge = useDiagramStore((state) => state.addEdge);
     const removeEdge = useDiagramStore((state) => state.removeEdge);
     const setDiagramName = useDiagramStore((state) => state.setDiagramName);
+    const replaceLevel = useDiagramStore((state) => state.replaceLevel);
 
     const [parentProcessNumber, setParentProcessNumber] = useState('');
     const [parentProcessName, setParentProcessName] = useState('');
@@ -50,6 +59,8 @@ export const SubProcessDecompositionForm = () => {
     const [datastoreName, setDatastoreName] = useState('');
 
     const [expandedProcessId, setExpandedProcessId] = useState<string | null>(null);
+    const [importProblems, setImportProblems] = useState<string[]>([]);
+    const [importSummary, setImportSummary] = useState<DecompositionCsvImportSummary | null>(null);
 
     const existingParticipants = selectFlowParticipants(diagram, LEVEL);
     const existingDatastores = selectDataStores(diagram, LEVEL);
@@ -59,6 +70,78 @@ export const SubProcessDecompositionForm = () => {
 
     const handleUpdateTitle = () => {
         setDiagramName(`Level 2 - ${parentProcessNumber} ${parentProcessName}`);
+    };
+
+    /**
+     * Imports one process's decomposition.
+     *
+     * A Level 2 diagram covers a single parent process, so an import replaces
+     * the level rather than adding to it — the file for 6.0 and the file for 7.0
+     * are two different diagrams, not two halves of one.
+     *
+     * The parent is worked out from the sub-process numbers, and the matching
+     * Level 1 process supplies its name and the link back to it.
+     */
+    const handleImportCsv = async () => {
+        setImportProblems([]);
+        setImportSummary(null);
+
+        let picked;
+        try {
+            picked = await pickAndReadTextFile('.csv,text/csv');
+        } catch {
+            setImportProblems(['That file could not be read.']);
+            return;
+        }
+
+        // The user dismissed the picker; leave the level alone.
+        if (!picked) return;
+
+        const result = importDecompositionFromCsv(picked.text, LEVEL);
+
+        if (!result.ok) {
+            setImportProblems(result.problems);
+            return;
+        }
+
+        const parent = diagram.nodes.find(
+            (node): node is ProcessNode =>
+                node.type === 'process' &&
+                node.level === 1 &&
+                node.processNumber === result.parentProcessNumber
+        );
+
+        const hasExistingWork = processModels.length > 0 || existingParticipants.length > 0;
+        if (hasExistingWork) {
+            const isConfirmed = window.confirm(
+                `Import the decomposition of ${result.parentProcessNumber} ` +
+                `(${result.processCount} sub-processes, ${result.flowCount} flows) from ` +
+                `"${picked.fileName}"?
+
+This replaces everything on Level 2. ` +
+                'The context diagram and Level 1 are not affected.'
+            );
+            if (!isConfirmed) return;
+        }
+
+        // Recording the parent keeps a sub-process tied to the process it came
+        // from, which is what a reader of the saved file needs to make sense of
+        // numbering like 6.1.
+        const nodes = parent
+            ? result.nodes.map((node) =>
+                node.type === 'process' ? { ...node, parentProcessId: parent.id } : node
+            )
+            : result.nodes;
+
+        replaceLevel(LEVEL, nodes, result.edges);
+        setExpandedProcessId(null);
+        setImportSummary(result);
+
+        if (result.parentProcessNumber) {
+            setParentProcessNumber(result.parentProcessNumber);
+            setParentProcessName(parent?.label ?? '');
+            setDiagramName(`Level 2 - ${result.parentProcessNumber} ${parent?.label ?? ''}`.trim());
+        }
     };
 
     const handleAddParticipant = () => {
@@ -210,6 +293,65 @@ export const SubProcessDecompositionForm = () => {
             </div>
 
             <div className={styles.content}>
+                {/* IMPORT */}
+                <section className={styles.globalSection}>
+                    <h3 className={styles.globalTitle}>Import from CSV</h3>
+
+                    <p className={styles.importHint}>
+                        Columns: <code>process_name</code>, <code>entity_name</code>,{' '}
+                        <code>in_flow</code>, <code>out_flow</code>, <code>data_store</code>,{' '}
+                        <code>data_store_inflow</code>, <code>data_store_outflow</code> — the same
+                        as Level 1.
+                    </p>
+
+                    <p className={styles.importHint}>
+                        One file per process. Number each sub-process after the process it
+                        decomposes (<code>6.1 Cart Management</code>), and the parent{' '}
+                        <code>6.0</code> is taken from that. Importing replaces Level 2, because
+                        each file is one process's decomposition.
+                    </p>
+
+                    <p className={styles.importHint}>
+                        An <code>entity_name</code> written with a process number is treated as a
+                        process: <code>6.2 Order Processing</code> joins that sub-process if the
+                        file defines it, and otherwise becomes a reference box beside the entities.
+                    </p>
+
+                    <div className={styles.importActions}>
+                        <button onClick={handleImportCsv} className={styles.importButton}>
+                            <Upload size={16} /> Choose CSV file
+                        </button>
+                        <a
+                            href={EXAMPLE_CSV_URL}
+                            download="level-2-example.csv"
+                            className={styles.exampleLink}
+                        >
+                            <Download size={14} /> Example file
+                        </a>
+                    </div>
+
+                    {importProblems.length > 0 && (
+                        <ul className={styles.importProblemList}>
+                            {importProblems.map((problem) => (
+                                <li key={problem} className={styles.importProblem}>{problem}</li>
+                            ))}
+                        </ul>
+                    )}
+
+                    {importSummary && (
+                        <p className={styles.importSuccess}>
+                            Imported the decomposition of {importSummary.parentProcessNumber}:{' '}
+                            {importSummary.processCount} sub-process
+                            {importSummary.processCount === 1 ? '' : 'es'},{' '}
+                            {importSummary.participantCount} participant
+                            {importSummary.participantCount === 1 ? '' : 's'},{' '}
+                            {importSummary.dataStoreCount} data store
+                            {importSummary.dataStoreCount === 1 ? '' : 's'}, and{' '}
+                            {importSummary.flowCount} flow
+                            {importSummary.flowCount === 1 ? '' : 's'}.
+                        </p>
+                    )}
+                </section>
 
                 {/* SECTION 1: PARTICIPANTS */}
                 <section className={styles.globalSection}>

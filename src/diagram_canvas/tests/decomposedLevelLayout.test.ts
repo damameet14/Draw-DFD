@@ -237,30 +237,50 @@ describe('planDecomposedLevelLayout', () => {
         });
     });
 
-    it('puts every label on its own flow, clear of the shape it leaves', () => {
+    it('puts every label beside the entity or the store, never the process', () => {
         const { nodes, edges } = buildBusyLevel();
         const layout = planDecomposedLevelLayout(nodes, edges);
+        const typeById = new Map(nodes.map((node) => [node.id, node.type]));
 
         edges.forEach((edge) => {
             const route = layout.flows.get(edge.id)!;
-            const [start, corner] = route.points;
-            const sourceBox = layout.nodes.get(edge.sourceNodeId)!.box;
 
-            // On the first segment, which runs out of the source shape.
-            expect(route.labelPoint.y).toBeCloseTo(start.y, 5);
-            expect(
-                Math.min(start.x, corner.x) - TOLERANCE_PX <= route.labelPoint.x &&
-                route.labelPoint.x <= Math.max(start.x, corner.x) + TOLERANCE_PX
-            ).toBe(true);
+            // Whichever end is not the process circle is the one to read the
+            // label against, however the flow happens to point.
+            const outerNodeId =
+                typeById.get(edge.sourceNodeId) === 'process' ? edge.targetNodeId : edge.sourceNodeId;
+            const outerBox = layout.nodes.get(outerNodeId)!.box;
+            const outerHandle = layout.nodes
+                .get(outerNodeId)!
+                .handles.find((handle) => handle.edgeId === edge.id)!;
 
-            // And far enough out that a label of normal length cannot reach
-            // back over that shape.
-            const distanceFromShape = Math.min(
-                Math.abs(route.labelPoint.x - sourceBox.x),
-                Math.abs(route.labelPoint.x - (sourceBox.x + sourceBox.width))
+            // On that shape's own run, at its own height.
+            expect(route.labelPoint.y).toBeCloseTo(outerBox.y + outerHandle.y, 5);
+
+            // Beside the shape rather than out with the lanes.
+            const nearEdge = Math.min(
+                Math.abs(route.labelPoint.x - outerBox.x),
+                Math.abs(route.labelPoint.x - (outerBox.x + outerBox.width))
             );
-            expect(distanceFromShape).toBeGreaterThanOrEqual(100);
+            expect(nearEdge).toBeCloseTo(150, 5);
         });
+    });
+
+    it('lines the labels of one shape up in a column beside it', () => {
+        const { nodes, edges } = buildBusyLevel();
+        const layout = planDecomposedLevelLayout(nodes, edges);
+
+        // Every flow touching one entity, whichever way it points and whichever
+        // lane it takes, puts its label at the same distance from the box.
+        const entityFlows = edges.filter(
+            (edge) => edge.sourceNodeId === 'admin' || edge.targetNodeId === 'admin'
+        );
+        expect(entityFlows.length).toBeGreaterThan(2);
+
+        const labelXs = new Set(
+            entityFlows.map((edge) => Math.round(layout.flows.get(edge.id)!.labelPoint.x))
+        );
+        expect(labelXs.size).toBe(1);
     });
 
     it('keeps neighbouring labels a readable distance apart', () => {
@@ -340,6 +360,81 @@ describe('planDecomposedLevelLayout', () => {
         expect(layout.flows.has('f-1')).toBe(false);
         expect(layout.nodes.get('e-1')!.handles).toHaveLength(1);
         expect(layout.nodes.get('d-1')!.handles).toHaveLength(1);
+    });
+
+    it('sits an entity level with the process it talks to', () => {
+        // The entity only deals with the last of five processes, so it belongs
+        // down beside that one rather than at the top of its column.
+        const processes = Array.from({ length: 5 }, (_, index) =>
+            process(`p-${index + 1}`, `${index + 1}.0`)
+        );
+        const participant = entity('lonely');
+        const edges = interaction('pair', 'lonely', 'p-5');
+
+        const layout = planDecomposedLevelLayout([participant, ...processes], edges);
+
+        const entityBox = layout.nodes.get('lonely')!.box;
+        const processBox = layout.nodes.get('p-5')!.box;
+
+        expect(entityBox.y + entityBox.height / 2).toBeCloseTo(
+            processBox.y + processBox.height / 2,
+            -1.5
+        );
+    });
+
+    it('orders the flows of a shape by the height of the shape at the far end', () => {
+        // Written bottom process first, so the ordering cannot come from the
+        // order the flows were declared in.
+        const processes = [process('p-1', '1.0'), process('p-2', '2.0'), process('p-3', '3.0')];
+        const participant = entity('customer');
+        const edges = [
+            flow('to-third', 'customer', 'p-3'),
+            flow('to-first', 'customer', 'p-1'),
+            flow('to-second', 'customer', 'p-2'),
+        ];
+
+        const layout = planDecomposedLevelLayout([participant, ...processes], edges);
+        const handles = layout.nodes.get('customer')!.handles;
+
+        const heightOf = (edgeId: string) =>
+            handles.find((handle) => handle.edgeId === edgeId)!.y;
+
+        expect(heightOf('to-first')).toBeLessThan(heightOf('to-second'));
+        expect(heightOf('to-second')).toBeLessThan(heightOf('to-third'));
+    });
+
+    it('keeps the flows short enough that few of them cross', () => {
+        const { nodes, edges } = buildBusyLevel();
+        const layout = planDecomposedLevelLayout(nodes, edges);
+
+        // Crossings are horizontal-meets-vertical only, so counting them is a
+        // fair measure of how hard a diagram is to follow. Stacking each column
+        // from the top, as this used to, gives 266 on this fixture against 132
+        // for levelling each column against its neighbours; the shipped Level 1
+        // example goes from 3320 to 978. The bound sits between the two, so a
+        // return to the old behaviour fails while there is room to tune.
+        let crossings = 0;
+        const routes = [...layout.flows.values()];
+        for (const a of routes) {
+            for (const b of routes) {
+                if (a === b) continue;
+                const vertical = { x: b.points[1].x, lo: Math.min(b.points[1].y, b.points[2].y), hi: Math.max(b.points[1].y, b.points[2].y) };
+                for (const run of [[a.points[0], a.points[1]], [a.points[2], a.points[3]]]) {
+                    const [from, to] = run;
+                    const [low, high] = [Math.min(from.x, to.x), Math.max(from.x, to.x)];
+                    if (
+                        vertical.x > low + TOLERANCE_PX &&
+                        vertical.x < high - TOLERANCE_PX &&
+                        from.y > vertical.lo + TOLERANCE_PX &&
+                        from.y < vertical.hi - TOLERANCE_PX
+                    ) {
+                        crossings++;
+                    }
+                }
+            }
+        }
+
+        expect(crossings).toBeLessThan(edges.length * 4);
     });
 
     it('handles a level with nothing on it', () => {
